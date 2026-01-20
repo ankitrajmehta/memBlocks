@@ -1,6 +1,13 @@
+import sys
+from pathlib import Path
+
+# Add setup directory to path
+setup_dir = Path(__file__).parent.parent / "setup"
+sys.path.insert(0, str(setup_dir))
+
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchAny
-from vector_db.try.embeddings import OllamaEmbeddings
+from embeddings import OllamaEmbeddings
 from datetime import datetime
 import re
 import time

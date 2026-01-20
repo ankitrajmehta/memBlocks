@@ -1,6 +1,13 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
-from vector_db.try.embeddings import OllamaEmbeddings
+import sys
+from pathlib import Path
+
+# Add setup directory to path
+setup_dir = Path(__file__).parent.parent / "setup"
+sys.path.insert(0, str(setup_dir))
+
+from embeddings import OllamaEmbeddings
 from datetime import datetime
 import uuid
 

@@ -13,7 +13,6 @@ class OllamaEmbeddings:
             "model": self.model,
             "prompt": text
         }
-
         try:
             response = requests.post(
                 self.embeddings_endpoint,

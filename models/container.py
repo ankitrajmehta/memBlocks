@@ -15,11 +15,12 @@ class MemoryBlock(BaseModel):
     description: str = Field(..., description=" User given description of the block. " \
         "It tells the orchastrator, retriver and other agents of what is the purpose of this blocks, " \
         "and defines the domain/constraints of the block.")
-    semantic_memories = None #qDrant collection that stores SemanticMemoryUnit instances
-    core_memories = None #qDrant collection that stores CoreMemoryUnit instances
-    resource_memories = None #qDrant collection that stores ResourceMemoryUnit instances
-    class Config:
-        schema_extra = {
+    semantic_memories: Optional[str] = Field(None, description="qDrant collection that stores SemanticMemoryUnit instances")
+    core_memories: Optional[str] = Field(None, description="qDrant collection that stores CoreMemoryUnit instances")
+    resource_memories: Optional[str] = Field(None, description="qDrant collection that stores ResourceMemoryUnit instances")
+    
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "meta_data": {
                     "id": "block_12345",
@@ -29,9 +30,11 @@ class MemoryBlock(BaseModel):
                     "user_id": "user_67890"
                 },
                 "description": "This memory block contains information about the user's professional experiences and skills.",
-                "semantic_memories": None,
-                "core_memories": None #
+                "semantic_memories": "block_12345_semantic",
+                "core_memories": "block_12345_core",
+                "resource_memories": "block_12345_resource"
             }
         }
+    }
 
 
