@@ -1,6 +1,6 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchAny
-from embeddings import OllamaEmbeddings
+from vector_db.try.embeddings import OllamaEmbeddings
 from datetime import datetime
 import re
 import time
@@ -73,7 +73,8 @@ def retrieve_memories_for_query(user_question, top_k=5, verbose=True):
     
     for hit in search_results:
         point_id = str(hit.id)
-        base_score = hit.score * 50 if hit.score else 25
+        base_score = hit.score
+        print(f"Debug: Hit ID {point_id} with hit score {hit.score}")
         
         if point_id in all_results:
             all_results[point_id]['score'] += base_score
@@ -81,7 +82,7 @@ def retrieve_memories_for_query(user_question, top_k=5, verbose=True):
         else:
             all_results[point_id] = {
                 'payload': hit.payload,
-                'score': base_score + hit.payload.get('importance_score', 5),
+                'score': base_score,
                 'match_type': 'semantic'
             }
     
@@ -103,7 +104,7 @@ def retrieve_memories_for_query(user_question, top_k=5, verbose=True):
     # Adaptive threshold: If we have entity matches (high scores), be strict
     # If no entity matches, be more lenient
     has_entity_matches = any(r['score'] > 80 for r in sorted_results)
-    MIN_SCORE = 60 if has_entity_matches else 30
+    MIN_SCORE = 60 if has_entity_matches else 0
     
     filtered_results = [r for r in sorted_results if r['score'] > MIN_SCORE][:top_k]
     
@@ -132,6 +133,7 @@ def retrieve_memories_for_query(user_question, top_k=5, verbose=True):
         context += f"  Details: {p['details']}\n"
         context += f"  Date: {p['event_timestamp'][:10]}\n"
         context += f"  Type: {p['memory_type']}\n\n"
+        context += f"  Score: {item['score']:.1f} (Match type: {item['match_type']})\n"
     
     return context, sorted_results
 
@@ -189,14 +191,14 @@ def interactive_memory_chat():
         print("=" * 70)
         print(memories_context)
         
-        # Create LLM prompt
-        full_prompt = create_llm_prompt(user_question, memories_context)
+        # # Create LLM prompt
+        # full_prompt = create_llm_prompt(user_question, memories_context)
         
-        print("\n" + "=" * 70)
-        print("📋 PROMPT FOR LLM (Copy this to Claude/ChatGPT):")
-        print("=" * 70)
-        print(full_prompt)
-        print("=" * 70)
+        # print("\n" + "=" * 70)
+        # print("📋 PROMPT FOR LLM (Copy this to Claude/ChatGPT):")
+        # print("=" * 70)
+        # print(full_prompt)
+        # print("=" * 70)
         
         print("\n💡 Next steps:")
         print("   1. Copy the prompt above")

@@ -1,6 +1,6 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
-from embeddings import OllamaEmbeddings
+from vector_db.try.embeddings import OllamaEmbeddings
 
 # Initialize clients
 client = QdrantClient(host="localhost", port=6333)

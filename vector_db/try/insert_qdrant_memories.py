@@ -1,6 +1,6 @@
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
-from embeddings import OllamaEmbeddings
+from vector_db.try.embeddings import OllamaEmbeddings
 from datetime import datetime
 import uuid
 
