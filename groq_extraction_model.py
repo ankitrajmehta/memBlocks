@@ -1,50 +1,29 @@
-import requests
 import os
 import json
 from functools import lru_cache
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-if not GROQ_API_KEY:
-    raise ValueError("❌ GROQ_API_KEY not set in environment variables")
-
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-MODEL = "llama-3.3-70b-versatile"
-TIMEOUT = 20
+client = Groq()
+MODEL = "llama-3.1-8b-instant"
 
 def _call_groq(system_prompt, user_prompt):
     """Low level Groq API caller"""
 
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "model": MODEL,
-        "temperature": 0,
-        "messages": [
+    completion = client.chat.completions.create(
+        model=MODEL,
+        messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
-        ]
-    }
-
-    res = requests.post(
-        GROQ_URL,
-        headers=headers,
-        json=payload,
-        timeout=TIMEOUT
+        ],
+        temperature=0,
+        max_completion_tokens=8192,
+        top_p=1
     )
 
-    if res.status_code != 200:
-        raise RuntimeError(
-            f"Groq API error {res.status_code}: {res.text}"
-        )
-
-    return res.json()["choices"][0]["message"]["content"]
+    return completion.choices[0].message.content
 
 
 # =================================================
@@ -156,8 +135,13 @@ Text:
 if __name__ == "__main__":
     text = "Apple launched Vision Pro in California. Tim Cook presented it."
 
+    import time
+    start = time.time()
     print("\n🔹 ENTITIES")
     print(extract_entities(text))
+    end = time.time()
+    print(f"⏱️ Extraction took {end - start:.2f} seconds")
+
 
     print("\n🔹 METADATA")
     print(extract_metadata(text))

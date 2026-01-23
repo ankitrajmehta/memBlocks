@@ -1,4 +1,0 @@
-requests
-python-dotenv
-qdrant-client
-groq
