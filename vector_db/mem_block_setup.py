@@ -10,9 +10,8 @@ This module handles:
 NO data insertion or retrieval - just setup!
 """
 
-from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
-from .embeddings import OllamaEmbeddings
+from vector_db.vector_db_manager import VectorDBManager
 from datetime import datetime
 import uuid
 import sys
@@ -24,6 +23,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from models.container import MemoryBlock, MemoryBlockMetaData
+from models.sections import SemanticMemorySection, CoreMemorySection, ResourceMemorySection
 
 
 class MemBlockQdrantManager:
@@ -35,9 +35,9 @@ class MemBlockQdrantManager:
     One MemoryBlock = 3 Qdrant Collections
     
     MemoryBlock "personal" (id: block_abc123)
-      ├─ Collection: "block_abc123_semantic"   (SemanticMemoryUnit instances)
-      ├─ Collection: "block_abc123_core"       (CoreMemoryUnit instances)
-      └─ Collection: "block_abc123_resource"   (ResourceMemoryUnit instances)
+      ├─ Collection: "block_abc123_semantic"   (SemanticMemorySection instances)
+      ├─ Collection: "block_abc123_core"       (CoreMemorySection instances)
+      └─ Collection: "block_abc123_resource"   (ResourceMemorySection instances)
     
     Each collection stores:
     - Vector: Embedding of the memory content (768-dim for nomic-embed-text)
@@ -52,12 +52,12 @@ class MemBlockQdrantManager:
             qdrant_host: Qdrant server hostname
             qdrant_port: Qdrant server port
         """
-        self.client = QdrantClient(host=qdrant_host, port=qdrant_port)
-        self.embedder = OllamaEmbeddings()
+        self.client = VectorDBManager.get_client()
+        self.embedder = VectorDBManager.get_embedder()
         
         # Get embedding dimension from the model
         print("🔍 Detecting embedding dimension...")
-        self.vector_size = self.embedder.get_dimension()
+        self.vector_size = VectorDBManager.get_vector_size()
         print(f"   ✓ Using {self.vector_size}-dimensional vectors")
         
     def create_memory_block(
@@ -126,9 +126,9 @@ class MemBlockQdrantManager:
         memory_block = MemoryBlock(
             meta_data=metadata,
             description=description,
-            semantic_memories=collection_names['semantic'],
-            core_memories=collection_names['core'],
-            resource_memories=collection_names['resource']
+            semantic_memories=SemanticMemorySection(collection_name=collection_names['semantic']),
+            core_memories=CoreMemorySection(collection_name=collection_names['core']),
+            resource_memories=ResourceMemorySection(collection_name=collection_names['resource'])
         )
         
         print(f"\n✅ MemoryBlock '{block_id}' created successfully!")

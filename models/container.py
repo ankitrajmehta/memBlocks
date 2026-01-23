@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from .sections import SemanticMemoryUnit, CoreMemoryUnit, ResourceMemoryUnit
+from .units import SemanticMemoryUnit, CoreMemoryUnit, ResourceMemoryUnit
+from .sections import SemanticMemorySection, CoreMemorySection, ResourceMemorySection
 
 class MemoryBlockMetaData(BaseModel):
     id: str = Field(..., description="Unique identifier for the memory block.")
@@ -15,9 +16,9 @@ class MemoryBlock(BaseModel):
     description: str = Field(..., description=" User given description of the block. " \
         "It tells the orchastrator, retriver and other agents of what is the purpose of this blocks, " \
         "and defines the domain/constraints of the block.")
-    semantic_memories: Optional[str] = Field(None, description="qDrant collection that stores SemanticMemoryUnit instances")
-    core_memories: Optional[str] = Field(None, description="qDrant collection that stores CoreMemoryUnit instances")
-    resource_memories: Optional[str] = Field(None, description="qDrant collection that stores ResourceMemoryUnit instances")
+    semantic_memories: Optional[SemanticMemorySection] = Field(None)
+    core_memories: Optional[CoreMemorySection] = Field(None)
+    resource_memories: Optional[ResourceMemorySection] = Field(None)
     
     model_config = {
         "json_schema_extra": {

@@ -1,41 +1,100 @@
-from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from pydantic import BaseModel, Field, model_validator
+from .units import SemanticMemoryUnit, CoreMemoryUnit, ResourceMemoryUnit
+from typing import Literal, Optional, Any
+from concurrent.futures import ThreadPoolExecutor
+from vector_db.vector_db_manager import VectorDBManager
 
-class MemoryUnitMetaData(BaseModel):
-    usage: Optional[list[str]] = Field([], description="List of ISO 8601 formatted timestamps indicating when this memory was accessed or used.")
-    status: Optional[Literal["active", "archived", "deleted"]] = Field("active", description="The current status of the memory unit.")
-    
-class SemanticMemoryUnit(BaseModel):
-    """ One unit of memory to be stored in the section "event_and_factual_memories" 
-    """
-    content: str = Field(..., description="The main content of the memory. Extracted from user input or documents in a concise form.")
-    type: Literal["event", "factual", "opinion"] = Field(..., description="The type of memory: 'event' for time-specific events, 'factual' for general knowledge.")
-    source: Optional[str] = Field(None, description="Source of the memory information, e.g., 'user', 'document', etc.")
-    confidence: float = Field(..., ge=0, le=1, description="Confidence score of the memory's accuracy or relevance, between 0 and 1.")
-    memory_time: Optional[str] = Field(..., description="ISO 8601 formatted timestamp indicating when the memory event occurred. Not present for 'factual' memories.")
-    entities: Optional[list[str]] = Field([], description="List of entities mentioned in the memory content.")
-    tags: Optional[list[str]] = Field([], description="Optional tags or keywords associated with the memory for easier retrieval.")
-    updated_at: str = Field(..., description="ISO 8601 formatted timestamp indicating when the memory was last updated.")
-    meta_data: Optional[MemoryUnitMetaData] = Field(None, description="Additional metadata for the memory unit.")
-    class Config:
-        schema_extra = {
-            "example": {
-                "content": "User attended the AI conferencez in San Francisco and learned about the latest advancements in machine learning.",
-                "type": "event",
-                "confidence": 0.95,
-                "memory_time": "2023-11-15T10:00:00",
-                "entities": ["AI conference", "San Francisco", "machine learning"],
-                "tags": ["conference", "AI", "ML"],
-                "updated_at": "2023-11-16T12:00:00"
-            }
-        }
+class SemanticMemorySection(BaseModel):
+    """A section representing semantic memory."""
+    type: Literal["semantic"] = Field(default="semantic", description="Type of the memory section.")
+    collection_name: str = Field(description="qDrant collection that stores SemanticMemoryUnit instances")
 
-class CoreMemoryUnit(BaseModel):
-    """ One unit of core memory to be stored in the section "core_memories" """
-    content: str = Field(..., description="The main content of the core memory. Extracted from user input or documents in a concise form.")
+    @model_validator(mode='before')
+    @classmethod
+    def validate_from_string(cls, value: Any) -> Any:
+        """Allow initialization from a string (collection name) or dict.
+        Example initializations:
+            semantic_mem = SemanticMemorySection(collection_name="ok_collection")
+            semantic_mem = SemanticMemorySection({"collection_name": "ojha_collection"})
+            semantic_mem: SemanticMemorySection = "mojja_collection" 
+        """
+        if isinstance(value, str):
+            return {'collection_name': value}
+        return value
     
-class ResourceMemoryUnit(BaseModel):
-    """ One unit of resource memory to be stored in the section "resource_memories" """
-    content: str = Field(..., description="The main content of the resource memory. Extracted from user input or documents in a concise form.")
-    resource_type: Literal["document", "image", "video", "audio", "link", "extracted"] = Field(..., description="Type of the resource memory.")
-    resource_link: Optional[str] = Field(None, description="Link or path or message_ids to the resource if applicable.")
+    def store_memory(self, memory_unit: SemanticMemoryUnit) -> bool:
+        """Store a SemanticMemoryUnit in the corresponding collection.
+        
+        Args:
+            memory_unit (SemanticMemoryUnit): The memory unit to store.
+        """
+        embedder = VectorDBManager.get_embedder()
+        vector = embedder.embed_text(memory_unit.content)
+        payload = memory_unit.model_dump()
+        return VectorDBManager.store_vector(self.collection_name, vector, payload)
+    
+    def retrive_memories_single_query(self, query_text: str, top_k: int = 5) -> list:
+        """Retrieve top_k similar SemanticMemoryUnit instances based on a single query text.
+        
+        Args:
+            query_text (str): The text to query against stored memories.
+            top_k (int): Number of top similar memories to retrieve.
+        Returns:
+            list: List of retrieved SemanticMemoryUnit instances.
+        """
+        embedder = VectorDBManager.get_embedder()
+        query_vector = embedder.embed_text(query_text)
+
+        results = VectorDBManager.retrieve_from_vector(self.collection_name, query_vector, top_k)
+        return [SemanticMemoryUnit(**hit.payload) for hit in results]
+    
+    def retrieve_memories(self, query_texts: list[str], top_k: int = 5) -> list:
+        """Retrieve top_k similar SemanticMemoryUnit instances based on the query text.
+        
+        Args:
+            query_texts (list[str]): The texts to query against stored memories.
+            top_k (int): Number of top similar memories to retrieve.
+        Returns:
+            list: List of retrieved SemanticMemoryUnit instances.
+        """
+        embedder = VectorDBManager.get_embedder()
+
+        query_vectors = embedder.embed_documents(query_texts)
+
+        def _search(vector: list) -> list[SemanticMemoryUnit]:
+            results = VectorDBManager.retrieve_from_vector(self.collection_name, vector, top_k)
+            return [SemanticMemoryUnit(**hit.payload) for hit in results]
+
+        with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
+            grouped_results = list(executor.map(_search, query_vectors))
+
+        return grouped_results
+    
+
+
+
+class CoreMemorySection(BaseModel):
+    """A section representing core memory."""
+    type: Literal["core"] = Field(default="core", description="Type of the memory section.")
+    collection_name: str = Field(description="qDrant collection that stores CoreMemoryUnit instances")
+
+    @model_validator(mode='before')
+    @classmethod
+    def validate_from_string(cls, value: Any) -> Any:
+        """Allow initialization from a string (collection name) or dict."""
+        if isinstance(value, str):
+            return {'collection_name': value}
+        return value
+
+class ResourceMemorySection(BaseModel):
+    """A section representing resource memory."""
+    type: Literal["resource"] = Field(default="resource", description="Type of the memory section.")
+    collection_name: str = Field(description="qDrant collection that stores ResourceMemoryUnit instances")
+
+    @model_validator(mode='before')
+    @classmethod
+    def validate_from_string(cls, value: Any) -> Any:
+        """Allow initialization from a string (collection name) or dict."""
+        if isinstance(value, str):
+            return {'collection_name': value}
+        return value

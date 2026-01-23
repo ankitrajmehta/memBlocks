@@ -1,5 +1,7 @@
 import requests
 import json
+from concurrent.futures import ThreadPoolExecutor
+
 
 class OllamaEmbeddings:
 
@@ -30,7 +32,9 @@ class OllamaEmbeddings:
             
 
     def embed_documents(self, texts):
-        return [self.embed_text(text) for text in texts]
+        # using ThreadPoolExecutor for parallel embedding (2 times faster cha)
+        with ThreadPoolExecutor(max_workers=min(10, len(texts))) as executor:
+            return list(executor.map(self.embed_text, texts))
 
     def get_dimension(self):
         sample_embedding = self.embed_text("test")
@@ -39,15 +43,38 @@ class OllamaEmbeddings:
 # Test the embeddings
 if __name__ == "__main__":
     print("🧪 Testing Ollama embeddings...")
-
+    timings = []
     embedder = OllamaEmbeddings()
+    import time
 
-    # Test single embedding
-    text = "This is a testing sentence"
-    embedding = embedder.embed_text(text)
+    for _ in range(50):
+        start = time.time()
+        # Test single embedding
+        text = "This is a testing sentence"
+        embedding = embedder.embed_text(text)
+        end = time.time()
+        timings.append(end - start)
+    avg_time = sum(timings) / len(timings)
+    print(f"⏱️ Average time taken by request: {avg_time:.2f} seconds")
     print(f"✅ Generated embedding for: '{text}'")
     print(f"   Dimension: {len(embedding)}")
     print(f"   First 5 values: {embedding[:5]}")
+
+    timings = []
+    for _ in range(51):
+        # Test batch embedding
+        texts = [
+            "This is the first testing sentence.",
+            "Here is another sentence for embedding.",
+            "Embeddings are useful for many applications.",
+            "This is a sample text to test batch embedding.",
+            "Ollama provides local embedding generation."
+        ]
+        start = time.time()
+        embeddings = embedder.embed_documents(texts)
+        timings.append(time.time() - start)
+    avg_time = sum(timings) / len(timings)  
+    print(f"\n⏱️ Average time taken for batch embedding of {len(texts)} texts: {avg_time:.2f} seconds")
     
     # Get dimension
     dim = embedder.get_dimension()
