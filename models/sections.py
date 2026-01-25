@@ -68,8 +68,22 @@ class SemanticMemorySection(BaseModel):
         with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
             grouped_results = list(executor.map(_search, query_vectors))
 
+        # TODO: remove duplicates across different query results
+
         return grouped_results
     
+    def search_in_payload(self, filter_query: dict, top_k: int = 5)-> list[SemanticMemoryUnit]:
+        """Search memories based on payload filter.
+        
+        Args:
+            filter_query (dict): The filter query to apply on payload.
+            top_k (int): Number of top similar memories to retrieve.
+        Returns:
+            list: List of retrieved SemanticMemoryUnit instances.
+        """
+        # results = VectorDBManager.retrieve_with_filter(self.collection_name, filter_query, top_k)
+        # return [SemanticMemoryUnit(**hit.payload) for hit in results]
+        pass
 
 
 

@@ -4,6 +4,8 @@ from typing import Literal, Optional
 class MemoryUnitMetaData(BaseModel):
     usage: Optional[list[str]] = Field([], description="List of ISO 8601 formatted timestamps indicating when this memory was accessed or used.")
     status: Optional[Literal["active", "archived", "deleted"]] = Field("active", description="The current status of the memory unit.")
+    Parent_Memory_ids : Optional[list[str]] = Field([], description="List of IDs of parent memories related to this memory unit.")
+    message_ids : Optional[list[str]] = Field([], description="List of message IDs associated with this memory unit.")
     
 class SemanticMemoryUnit(BaseModel):
     """ One unit of memory to be stored in the section "event_and_factual_memories" 

@@ -62,6 +62,7 @@ class MemBlockQdrantManager:
         
     def create_memory_block(
         self, 
+        name: str,
         description: str, 
         user_id: Optional[str] = None
     ) -> MemoryBlock:
@@ -71,6 +72,7 @@ class MemBlockQdrantManager:
         This creates the STRUCTURE only - no data is inserted yet.
         
         Args:
+            name: Human-readable name for the memory block
             description: User-provided description of this block's purpose
                         e.g., "Personal memories about friends and family"
             user_id: Optional user identifier for multi-user systems
@@ -125,6 +127,7 @@ class MemBlockQdrantManager:
         # The Pydantic model stores collection names as strings
         memory_block = MemoryBlock(
             meta_data=metadata,
+            name=name,
             description=description,
             semantic_memories=SemanticMemorySection(collection_name=collection_names['semantic']),
             core_memories=CoreMemorySection(collection_name=collection_names['core']),

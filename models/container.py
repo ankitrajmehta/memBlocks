@@ -13,6 +13,7 @@ class MemoryBlockMetaData(BaseModel):
 class MemoryBlock(BaseModel):
     """ A block of memory with associated sections and metadata. """
     meta_data: MemoryBlockMetaData = Field(..., description="Metadata associated with the memory block.")
+    name: str = Field(..., description=" Human-readable name of the memory block. ")
     description: str = Field(..., description=" User given description of the block. " \
         "It tells the orchastrator, retriver and other agents of what is the purpose of this blocks, " \
         "and defines the domain/constraints of the block.")

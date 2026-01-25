@@ -11,6 +11,7 @@ def build_block_store_retrieve() -> None:
     # Time block creation
     start = time.time()
     block = manager.create_memory_block(
+        name="TestBlock",
         description="Personal semantic memories",
         user_id="user_123"
     )
@@ -39,7 +40,7 @@ def build_block_store_retrieve() -> None:
     start = time.time()
     results = block.semantic_memories.retrieve_memories(
         query_texts=["AI conference in San Francisco", "good weather in New York", "technology trends in 2024"],
-        top_k=1
+        top_k=3
     )
     retrieve_time = time.time() - start
     print(f"Memory retrieval time: {retrieve_time:.2f}s")
