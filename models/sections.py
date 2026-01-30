@@ -78,9 +78,20 @@ class SemanticMemorySection(BaseModel):
         with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
             grouped_results = list(executor.map(_search, query_vectors))
 
-        # TODO: remove duplicates across different query results
+        # Remove duplicates across different query results
+        seen_ids = set()
+        deduplicated_results = []
 
-        return grouped_results
+        for result_group in grouped_results:
+            unique_group = []
+            for memory in result_group:
+                memory_id = memory.meta_data.id if memory.meta_data else memory.content
+                if memory_id not in seen_ids:
+                    seen_ids.add(memory_id)
+                    unique_group.append(memory)
+            deduplicated_results.append(unique_group)
+
+        return deduplicated_results
 
     def search_in_payload(
         self, filter_query: dict, top_k: int = 5
@@ -184,9 +195,19 @@ class CoreMemorySection(BaseModel):
         with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
             grouped_results = list(executor.map(_search, query_vectors))
 
-        # TODO: remove duplicates across different query results
+        # Remove duplicates across different query results
+        seen_contents = set()
+        deduplicated_results = []
 
-        return grouped_results
+        for result_group in grouped_results:
+            unique_group = []
+            for memory in result_group:
+                if memory.content not in seen_contents:
+                    seen_contents.add(memory.content)
+                    unique_group.append(memory)
+            deduplicated_results.append(unique_group)
+
+        return deduplicated_results
 
     def search_in_payload(
         self, filter_query: dict, top_k: int = 5
@@ -311,9 +332,18 @@ class ResourceMemorySection(BaseModel):
         with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
             grouped_results = list(executor.map(_search, query_vectors))
 
-        # TODO: remove duplicates across different query results
+        # remove duplicates across different query results
 
-        return grouped_results
+        seen_contents = set()
+        deduplicated_results = []
+
+        for result_group in grouped_results:
+            unique_group = []
+            for memory in result_group:
+                if memory.content not in seen_contents:
+                    seen_contents.add(memory.content)
+                    unique_group.append(memory)
+            deduplicated_results.append(unique_group)
 
     def search_in_payload(
         self, filter_query: dict, top_k: int = 5
