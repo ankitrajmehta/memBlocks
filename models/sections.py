@@ -79,15 +79,14 @@ class SemanticMemorySection(BaseModel):
             grouped_results = list(executor.map(_search, query_vectors))
 
         # Remove duplicates across different query results
-        seen_ids = set()
+        seen_contents = set()
         deduplicated_results = []
 
         for result_group in grouped_results:
             unique_group = []
             for memory in result_group:
-                memory_id = memory.meta_data.id if memory.meta_data else memory.content
-                if memory_id not in seen_ids:
-                    seen_ids.add(memory_id)
+                if memory.content not in seen_contents:
+                    seen_contents.add(memory.content)
                     unique_group.append(memory)
             deduplicated_results.append(unique_group)
 
@@ -333,7 +332,6 @@ class ResourceMemorySection(BaseModel):
             grouped_results = list(executor.map(_search, query_vectors))
 
         # remove duplicates across different query results
-
         seen_contents = set()
         deduplicated_results = []
 
@@ -344,6 +342,8 @@ class ResourceMemorySection(BaseModel):
                     seen_contents.add(memory.content)
                     unique_group.append(memory)
             deduplicated_results.append(unique_group)
+
+        return deduplicated_results
 
     def search_in_payload(
         self, filter_query: dict, top_k: int = 5
