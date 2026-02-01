@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
-from .units import SemanticMemoryUnit, CoreMemoryUnit, ResourceMemoryUnit
+from models.units import SemanticMemoryUnit, CoreMemoryUnit, ResourceMemoryUnit
 from typing import Literal, Optional, Any
 from concurrent.futures import ThreadPoolExecutor
 from vector_db.vector_db_manager import VectorDBManager
@@ -18,12 +18,7 @@ class SemanticMemorySection(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def validate_from_string(cls, value: Any) -> Any:
-        """Allow initialization from a string (collection name) or dict.
-        Example initializations:
-            semantic_mem = SemanticMemorySection(collection_name="ok_collection")
-            semantic_mem = SemanticMemorySection({"collection_name": "ojha_collection"})
-            semantic_mem: SemanticMemorySection = "mojja_collection"
-        """
+        """Allow initialization from a string (collection name) or dict."""
         if isinstance(value, str):
             return {"collection_name": value}
         return value
@@ -31,11 +26,23 @@ class SemanticMemorySection(BaseModel):
     def store_memory(self, memory_unit: SemanticMemoryUnit) -> bool:
         """Store a SemanticMemoryUnit in the corresponding collection.
 
+        PS1 Enhancement: Uses enriched embedding_text if available for better retrieval.
+
         Args:
             memory_unit (SemanticMemoryUnit): The memory unit to store.
+        Returns:
+            bool: True if storage was successful, False otherwise.
         """
         embedder = VectorDBManager.get_embedder()
-        vector = embedder.embed_text(memory_unit.content)
+
+        # PS1: Use enriched embedding_text if available, otherwise fall back to content
+        text_to_embed = (
+            memory_unit.embedding_text
+            if memory_unit.embedding_text
+            else memory_unit.content
+        )
+
+        vector = embedder.embed_text(text_to_embed)
         payload = memory_unit.model_dump()
         return VectorDBManager.store_vector(self.collection_name, vector, payload)
 
@@ -132,12 +139,7 @@ class CoreMemorySection(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def validate_from_string(cls, value: Any) -> Any:
-        """Allow initialization from a string (collection name) or dict.
-        Example initializations:
-            core_mem = CoreMemorySection(collection_name="core_collection")
-            core_mem = CoreMemorySection({"collection_name": "core_collection"})
-            core_mem: CoreMemorySection = "core_collection"
-        """
+        """Allow initialization from a string (collection name) or dict."""
         if isinstance(value, str):
             return {"collection_name": value}
         return value
@@ -269,12 +271,7 @@ class ResourceMemorySection(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def validate_from_string(cls, value: Any) -> Any:
-        """Allow initialization from a string (collection name) or dict.
-        Example initializations:
-            resource_mem = ResourceMemorySection(collection_name="resource_collection")
-            resource_mem = ResourceMemorySection({"collection_name": "resource_collection"})
-            resource_mem: ResourceMemorySection = "resource_collection"
-        """
+        """Allow initialization from a string (collection name) or dict."""
         if isinstance(value, str):
             return {"collection_name": value}
         return value
@@ -282,13 +279,23 @@ class ResourceMemorySection(BaseModel):
     def store_memory(self, memory_unit: ResourceMemoryUnit) -> bool:
         """Store a ResourceMemoryUnit in the corresponding collection.
 
+        PS1 Enhancement: Uses enriched embedding_text if available for better resource retrieval.
+
         Args:
             memory_unit (ResourceMemoryUnit): The memory unit to store.
         Returns:
             bool: True if storage was successful, False otherwise.
         """
         embedder = VectorDBManager.get_embedder()
-        vector = embedder.embed_text(memory_unit.content)
+
+        # PS1: Use enriched embedding_text if available, otherwise fall back to content
+        text_to_embed = (
+            memory_unit.embedding_text
+            if memory_unit.embedding_text
+            else memory_unit.content
+        )
+
+        vector = embedder.embed_text(text_to_embed)
         payload = memory_unit.model_dump()
         return VectorDBManager.store_vector(self.collection_name, vector, payload)
 
