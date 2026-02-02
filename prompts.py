@@ -20,7 +20,7 @@ Instructions:
    - Do NOT include speaker names, timestamps, or conversational filler.
    - At least 3 keywords, ordered from most to least important.
 
-2. Context
+2. content
    - Write exactly ONE sentence that captures:
      • the primary domain or topic
      • the user's intent, concern, or goal

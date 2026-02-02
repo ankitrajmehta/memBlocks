@@ -68,7 +68,8 @@ def build_block_store_retrieve() -> None:
     print("=" * 60)
 
     core_unit = CoreMemoryUnit(
-        content="User's name is David. User prefers concise responses and likes Japanese cuisine."
+        persona_content="You are a helpful AI assistant.",
+        human_content="User's name is David. User prefers concise responses and likes Japanese cuisine.",
     )
 
     # Time core memory storage
@@ -88,38 +89,39 @@ def build_block_store_retrieve() -> None:
     print("Retrieved core memories:")
     for query_results in core_results:
         for memory in query_results:
-            print(f"  - {memory.content}")
+            print(f"  - Persona: {memory.persona_content}")
+            print(f"  - Human: {memory.human_content}")
 
     # ========== RESOURCE MEMORY ==========
-    print("\n" + "=" * 60)
-    print("RESOURCE MEMORY SECTION")
-    print("=" * 60)
+    # print("\n" + "=" * 60)
+    # print("RESOURCE MEMORY SECTION")
+    # print("=" * 60)
 
-    resource_unit = ResourceMemoryUnit(
-        content="API Documentation: REST endpoints include /api/users, /api/projects, /api/tasks with full CRUD operations.",
-        resource_type="document",
-        resource_link="docs/api-reference.pdf",
-    )
+    # resource_unit = ResourceMemoryUnit(
+    #     content="API Documentation: REST endpoints include /api/users, /api/projects, /api/tasks with full CRUD operations.",
+    #     resource_type="document",
+    #     resource_link="docs/api-reference.pdf",
+    # )
 
-    # Time resource memory storage
-    start = time.time()
-    block.resource_memories.store_memory(resource_unit)
-    store_time = time.time() - start
-    print(f"Resource memory storage time: {store_time:.2f}s")
+    # # Time resource memory storage
+    # start = time.time()
+    # block.resource_memories.store_memory(resource_unit)
+    # store_time = time.time() - start
+    # print(f"Resource memory storage time: {store_time:.2f}s")
 
-    # Time resource memory retrieval
-    start = time.time()
-    resource_results = block.resource_memories.retrieve_memories(
-        query_texts=["API documentation", "REST endpoints", "user guides"], top_k=3
-    )
-    retrieve_time = time.time() - start
-    print(f"Resource memory retrieval time: {retrieve_time:.2f}s")
+    # # Time resource memory retrieval
+    # start = time.time()
+    # resource_results = block.resource_memories.retrieve_memories(
+    #     query_texts=["API documentation", "REST endpoints", "user guides"], top_k=3
+    # )
+    # retrieve_time = time.time() - start
+    # print(f"Resource memory retrieval time: {retrieve_time:.2f}s")
 
-    print("Retrieved resource memories:")
-    for query_results in resource_results:
-        for memory in query_results:
-            print(f"  - {memory.content}")
-            print(f"    Type: {memory.resource_type}, Link: {memory.resource_link}")
+    # print("Retrieved resource memories:")
+    # for query_results in resource_results:
+    #     for memory in query_results:
+    #         print(f"  - {memory.content}")
+    #         print(f"    Type: {memory.resource_type}, Link: {memory.resource_link}")
 
     # ========== SUMMARY ==========
     print("\n" + "=" * 60)
@@ -133,14 +135,13 @@ def build_block_store_retrieve() -> None:
         f"  - Semantic Memories Collection: {block.semantic_memories.collection_name}"
     )
     print(f"  - Core Memories Collection: {block.core_memories.collection_name}")
-    print(
-        f"  - Resource Memories Collection: {block.resource_memories.collection_name}"
-    )
-
+    # print(
+    #     f"  - Resource Memories Collection: {block.resource_memories.collection_name}"
+    # )
 
 def main():
     build_block_store_retrieve()
-
+    build_block_store_retrieve()
 
 if __name__ == "__main__":
     main()

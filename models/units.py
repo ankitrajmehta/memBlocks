@@ -47,13 +47,7 @@ class SemanticMemoryUnit(BaseModel):
         ...,
         description="ISO 8601 formatted timestamp indicating when the memory event occurred. Not present for 'factual' memories.",
     )
-    entities: Optional[list[str]] = Field(
-        [], description="List of entities mentioned in the memory content."
-    )
-    tags: Optional[list[str]] = Field(
-        [],
-        description="Optional tags or keywords associated with the memory for easier retrieval.",
-    )
+
     updated_at: str = Field(
         ...,
         description="ISO 8601 formatted timestamp indicating when the memory was last updated.",
@@ -62,18 +56,16 @@ class SemanticMemoryUnit(BaseModel):
         None, description="Additional metadata for the memory unit."
     )
 
-    # PS1-specific fields
     keywords: Optional[list[str]] = Field(
         [],
-        description="PS1: Ranked keywords optimized for retrieval (most to least important).",
-    )
-    context_sentence: Optional[str] = Field(
-        "",
-        description="PS1: One sentence capturing domain, intent, and knowledge type.",
+        description="PS1: Ranked keywords optimized for retrieval (most to least important). Encompasses both categorical tags and key terms for comprehensive searchability.",
     )
     embedding_text: Optional[str] = Field(
         "",
         description="PS1: Concatenated text used for embedding generation (content + keywords + tags + context).",
+    )
+    entities: Optional[list[str]] = Field(
+        [], description="List of entities mentioned in the memory content."
     )
 
     class Config:
@@ -84,13 +76,13 @@ class SemanticMemoryUnit(BaseModel):
                 "confidence": 0.95,
                 "memory_time": "2023-11-15T10:00:00",
                 "entities": ["AI conference", "San Francisco", "machine learning"],
-                "tags": ["conference", "AI", "ML"],
                 "keywords": [
                     "AI conference",
                     "San Francisco",
-                    "machine learning advancements",
+                    "machine learning",
+                    "professional development",
+                    "technology",
                 ],
-                "context_sentence": "User participated in AI conference event in San Francisco focused on machine learning advancements, representing professional development activity.",
                 "updated_at": "2023-11-16T12:00:00",
             }
         }
@@ -131,23 +123,23 @@ class ResourceMemoryUnit(BaseModel):
         None, description="Link or path or message_ids to the resource if applicable."
     )
 
-    # PS1-specific fields for resources
-    keywords: Optional[list[str]] = Field(
-        [],
-        description="PS1: Key terms extracted from the resource for better retrieval.",
-    )
-    tags: Optional[list[str]] = Field(
-        [],
-        description="PS1: Categorical tags for the resource (domain, type, purpose).",
-    )
-    entities: Optional[list[str]] = Field(
-        [], description="PS1: Named entities found in the resource."
-    )
-    context_sentence: Optional[str] = Field(
-        "",
-        description="PS1: One sentence summary of the resource's purpose and content.",
-    )
-    embedding_text: Optional[str] = Field(
-        "",
-        description="PS1: Enriched text for embedding (summary + keywords + tags + context).",
-    )
+    # # PS1-specific fields for resources
+    # keywords: Optional[list[str]] = Field(
+    #     [],
+    #     description="PS1: Key terms extracted from the resource for better retrieval.",
+    # )
+    # tags: Optional[list[str]] = Field(
+    #     [],
+    #     description="PS1: Categorical tags for the resource (domain, type, purpose).",
+    # )
+    # entities: Optional[list[str]] = Field(
+    #     [], description="PS1: Named entities found in the resource."
+    # )
+    # context_sentence: Optional[str] = Field(
+    #     "",
+    #     description="PS1: One sentence summary of the resource's purpose and content.",
+    # )
+    # embedding_text: Optional[str] = Field(
+    #     "",
+    #     description="PS1: Enriched text for embedding (summary + keywords + tags + context).",
+    # )
