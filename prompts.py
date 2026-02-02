@@ -4,6 +4,7 @@ This module collects all multi-line LLM prompts so they can be maintained
 in one place and reused across modules.
 """
 
+# TODO: change prompt so it can produce multiple memories from the conversation instead of just one. Each memory should be minimal and focused on a single topic or fact.
 PS1_SEMANTIC_PROMPT = """Generate a structured analysis of the following conversation for semantic memory storage.
 
 Your output will be used for:
@@ -29,7 +30,7 @@ Instructions:
 - Example ranking: ["Redis", "LRU caching", "RAM optimization", "caching strategy", "performance", "backend", "optimization"]
 
 2. content
-   - Write exactly ONE sentence that captures:
+   - Write exactly ONE concise sentence that captures:
      • the primary domain or topic
      • the user's intent, concern, or goal
      • whether this represents new information, a refinement, or continuation
@@ -87,35 +88,46 @@ Instructions:
    - Important for finding this resource later
 
 Output format (JSON only):
-
-{
+{{
   "keywords": ["keyword1", "keyword2", "keyword3"],
-  "context": "One sentence about the resource content",
-  "tags": ["tag1", "tag2", "tag3"],
-  "entities": ["entity1", "entity2"]
-}"""
+  "content": "One concise sentence description",
+  "type": "event | factual | opinion",
+  "entities": ["entity1", "entity2"],
+  "confidence": 0.85
+}}"""
 
 
-CORE_MEMORY_PROMPT = """
-You are a core memory extractor. You have been given the present know core information, and a list
-of user messages.
-Extract stable, enduring facts about the user from this conversation and rewrite the core information
+CORE_MEMORY_PROMPT = """You are a core memory extractor. Your task is to update the core memory based on the conversation history.
 
-Human Content is the information about the user that should be stored in core memory.
-Persona content is the information about how the assistant should interact with the user. 
+Core memory consists of two paragraphs (2-3 sentences each):
 
-Focus ONLY on:
-- User's name, location, occupation
-- Lasting preferences (communication style, interests, dislikes)
-- Important relationships (family, colleagues mentioned by name)
-- Self-identifying attributes
+1. PERSONA: Information about how the AI assistant should behave and communicate
+   - Communication style preferences (concise, detailed, formal, casual)
+   - Tone and personality traits
+   - Special instructions for the assistant
 
-Do NOT extract:
-- Temporary events or plans
-- Opinions that may change
-- Specific projects (those go to semantic memory)
+2. HUMAN: Stable, enduring facts about the user
+   - Name, location, occupation
+   - Key preferences and interests
+   - Important relationships
+   - Self-identifying attributes
 
-If no core memories found, return dict with empty str"""
+IMPORTANT GUIDELINES:
+- Only extract STABLE, ENDURING facts
+- Do NOT include:
+  * Temporary events or one-time occurrences
+  * Specific projects (those go to semantic memory)
+  * Opinions that may change over time
+  * Detailed technical information
+- Keep each paragraph to 5-6 sentences maximum
+- If conversation contains no core memory worthy information, return the previous core memory unchanged
+- Update existing facts if new information is more accurate or complete
+
+Output format:
+{{
+  "persona_content": "2-3 sentence paragraph about assistant behavior",
+  "human_content": "5-6 sentence paragraph about user facts"
+}}"""
 
 
 SUMMARY_SYSTEM_PROMPT = """You are a conversation summarizer. Create a concise recursive summary that:
@@ -124,7 +136,10 @@ SUMMARY_SYSTEM_PROMPT = """You are a conversation summarizer. Create a concise r
 3. Maintains temporal context
 4. Is concise but comprehensive
 
-Return ONLY the summary text, no JSON or formatting."""
+Output format (JSON only):
+{{
+  "summary": "Your concise summary text here"
+}}"""
 
 
 ASSISTANT_BASE_PROMPT = """You are a helpful AI assistant with access to persistent memory.

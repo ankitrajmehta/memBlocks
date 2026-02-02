@@ -1,0 +1,4 @@
+FROM ollama/ollama:0.12.9
+
+# Pull the nomic-embed-text model during image build
+RUN ollama serve & sleep 5 && ollama pull nomic-embed-text && pkill ollama

@@ -22,6 +22,39 @@ class VectorDBManager:
         return VectorDBManager.vector_size
     
     @staticmethod
+    def create_collection(collection_name: str) -> bool:
+        """Create a new Qdrant collection.
+        
+        Args:
+            collection_name (str): Name of the collection to create.
+            
+        Returns:
+            bool: True if successful, False otherwise.
+        """
+        from qdrant_client.models import Distance, VectorParams
+        
+        client = VectorDBManager.get_client()
+        try:
+            # Check if collection already exists
+            collections = client.get_collections().collections
+            if any(col.name == collection_name for col in collections):
+                print(f"Collection '{collection_name}' already exists.")
+                return True
+            
+            # Create new collection
+            client.create_collection(
+                collection_name=collection_name,
+                vectors_config=VectorParams(
+                    size=VectorDBManager.get_vector_size(),
+                    distance=Distance.COSINE
+                )
+            )
+            return True
+        except Exception as e:
+            print(f"Error creating collection: {e}")
+            return False
+    
+    @staticmethod
     def store_vector(collection_name: str, vector: list, payload: dict, point_id: str | None = None) -> bool:
         """Store a vector in the specified collection.
 
