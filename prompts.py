@@ -14,11 +14,19 @@ Your output will be used for:
 Instructions:
 
 1. Keywords
-   - Identify the most salient and retrieval-effective keywords.
-   - Focus on concrete technical nouns, actions, constraints, and entities.
-   - Avoid generic verbs (e.g., "use", "do", "make") unless they carry domain-specific meaning.
-   - Do NOT include speaker names, timestamps, or conversational filler.
-   - At least 3 keywords, ordered from most to least important.
+- Ranked list (most to least important) combining BOTH specific key terms AND categorical tags
+- Key terms (specific): Identify salient, retrieval-effective terms
+  • Focus on: concrete technical nouns, actions, constraints, entities
+  • Examples: "Redis", "LRU caching", "RAM optimization", "40% reduction", "Sarah"
+  • Avoid: generic verbs ("use", "do", "make") unless domain-specific, speaker names, timestamps, conversational filler
+- Category tags (general): Generate high-level categorical classifications
+  • Domain tags: programming, systems, AI, backend, infrastructure, business
+  • Functional tags: optimization, design, debugging, performance, security, deployment
+  • Memory-nature tags: event, factual, planning, concern, preference, tutorial, guide
+- Minimum 5 keywords recommended for optimal retrieval
+- Order from most specific to most general: specific tech/entity → concrete concept → approach → functional category → domain → memory nature
+- Avoid redundancy across the entire list
+- Example ranking: ["Redis", "LRU caching", "RAM optimization", "caching strategy", "performance", "backend", "optimization"]
 
 2. content
    - Write exactly ONE sentence that captures:
@@ -27,20 +35,14 @@ Instructions:
      • whether this represents new information, a refinement, or continuation
    - The sentence should be extensible for future memory refinement.
 
-3. Tags
-   - Generate high-level categorical tags including:
-     • domain tags (e.g., programming, systems, AI)
-     • functional tags (e.g., optimization, design, debugging)
-     • memory-nature tags (e.g., event, factual, planning, concern)
-   - At least 3 tags, avoid redundancy.
 
-4. Type
+3. Type
    - Classify as: `fact`, `event`, or `opinion`
    - fact: objective information
    - event: past or planned occurrence
    - opinion: user's perspective or preference
 
-5. Entities
+4. Entities
    - Extract key entities: people, places, technologies, tools, concepts
    - Focus on nouns and proper nouns important for retrieval
 
@@ -49,7 +51,6 @@ Output format (JSON only):
 {
   "keywords": ["keyword1", "keyword2", "keyword3"],
   "context": "One sentence description",
-  "tags": ["tag1", "tag2", "tag3"],
   "type": "fact | event | opinion",
   "entities": ["entity1", "entity2"]
 }"""
