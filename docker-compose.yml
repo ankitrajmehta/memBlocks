@@ -10,15 +10,45 @@ services:
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
     restart: unless-stopped
+    networks:
+      - memblocks-network
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=memblocks123
+    restart: unless-stopped
+    networks:
+      - memblocks-network
 
   ollama:
-    image: ollama/ollama:0.12.9
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
+    networks:
+      - memblocks-network
+
+networks:
+  memblocks-network:
+    driver: bridge
 
 volumes:
   qdrant_data:
+    driver: local
+    name: memblocks_qdrant_data
+  mongodb_data:
+    driver: local
+    name: memblocks_mongodb_data
   ollama_data:
+    driver: local
+    name: memblocks_ollama_data

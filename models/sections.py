@@ -6,10 +6,12 @@ from models.units import (
     ResourceMemoryUnit,
     MemoryUnitMetaData,
 )
-from models.extractions import Semantic_extraction
 from typing import Literal, Optional, Any, List, Dict
 from concurrent.futures import ThreadPoolExecutor
 from vector_db.vector_db_manager import VectorDBManager
+from vector_db.mongo_manager import mongo_manager
+from llm.llm_manager import llm_manager
+from llm.output_models import SemanticExtractionOutput, CoreMemoryOutput
 import asyncio
 from datetime import datetime
 import json
@@ -46,20 +48,16 @@ class SemanticMemorySection(BaseModel):
     async def extract_semantic_memories(
         self,
         messages: List[Dict[str, str]],
-        client,  # Groq/OpenAI client
-        model: str = "llama-3.1-8b-instant",
         ps1_prompt: str = PS1_SEMANTIC_PROMPT,
     ) -> List[SemanticMemoryUnit]:
         """
-        PS1: Extract structured semantic memories from conversation.
+        PS1: Extract structured semantic memories from conversation using LangChain.
 
         This extracts memories but does NOT store them - gives you control
         over filtering, validation, or modification before storage.
 
         Args:
             messages: List of conversation messages with 'role' and 'content'
-            client: LLM client (Groq, OpenAI, etc.)
-            model: Model name to use
             ps1_prompt: Custom PS1 prompt (optional, uses default if None)
 
         Returns:
@@ -71,80 +69,55 @@ class SemanticMemorySection(BaseModel):
             [f"{msg['role'].upper()}: {msg['content']}" for msg in messages]
         )
 
-        user_prompt = f"""Conversation to analyze:
+        user_input = f"""Conversation to analyze:
 
 {conversation_text}
 
-Extract structured semantic memories following the JSON format specified in the system prompt."""
-
-        # Call LLM for extraction
-        loop = asyncio.get_event_loop()
-        completion = await loop.run_in_executor(
-            None,
-            lambda: client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": ps1_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0,
-                max_completion_tokens=2048,
-                response_format={"type": "json_object"},
-            ),
-        )
-
-        raw_response = completion.choices[0].message.content.strip()
+Extract structured semantic memories. Analyze each significant piece of information."""
 
         try:
-            ps1_data = json.loads(raw_response)
+            # Create LangChain structured output chain
+            chain = llm_manager.create_structured_chain(
+                system_prompt=ps1_prompt,
+                pydantic_model=SemanticExtractionOutput,
+                temperature=0.0
+            )
+            
+            # Execute chain
+            result = await chain.ainvoke({"input": user_input})
+            
             current_time = datetime.now().isoformat()
 
-            # Handle both single memory and array of memories
-            memories_list = (
-                ps1_data.get("memories", [ps1_data])
-                if "memories" in ps1_data
-                else [ps1_data]
+            # Build enriched embedding text (PS1 enhancement)
+            embedding_text = f"""{result.content}
+Keywords: {', '.join(result.keywords)}
+Entities: {', '.join(result.entities)}""".strip()
+
+            # TODO: Extend to multiple memories
+            memory_unit = SemanticMemoryUnit(
+                content=result.content,
+                type=result.type,
+                source="conversation",
+                confidence=result.confidence,
+                memory_time=(
+                    current_time if result.type == "event" else None
+                ),
+                entities=result.entities,
+                updated_at=current_time,
+                meta_data=MemoryUnitMetaData(usage=[current_time]),
+                keywords=result.keywords,
+                embedding_text=embedding_text,
             )
 
-            extracted_memories = []
+            return [memory_unit]
 
-            for mem_data in memories_list:
-                # Build enriched embedding text (PS1 enhancement)
-                # Merged keywords now include both categorical tags and key terms
-                embedding_text = f"""{mem_data.get('content', '')}
-Keywords: {', '.join(mem_data.get('keywords', []))}
-Entities: {', '.join(mem_data.get('entities', []))}""".strip()
-
-                memory_unit = SemanticMemoryUnit(
-                    content=mem_data.get("content", ""),
-                    type=mem_data.get("type", "factual"),
-                    source="conversation",
-                    confidence=mem_data.get("confidence", 0.8),
-                    memory_time=(
-                        mem_data.get("memory_time", current_time)
-                        if mem_data.get("type") == "event"
-                        else None
-                    ),
-                    entities=mem_data.get("entities", []),
-                    updated_at=current_time,
-                    meta_data=MemoryUnitMetaData(usage=[current_time]),
-                    keywords=mem_data.get("keywords", []),
-                    embedding_text=embedding_text,
-                )
-
-                extracted_memories.append(memory_unit)
-
-            return extracted_memories
-
-        except json.JSONDecodeError as e:
-            print(f"⚠️ Failed to parse PS1 semantic JSON: {e}")
+        except Exception as e:
+            print(f"⚠️ Failed to extract semantic memories: {e}")
             return []
 
     async def extract_and_store_memories(
         self,
         messages: List[Dict[str, str]],
-        client,  # Groq/OpenAI client
-        model: str = "llama-3.1-8b-instant",
         ps1_prompt: str = PS1_SEMANTIC_PROMPT,
         min_confidence: float = 0.0,
     ) -> List[SemanticMemoryUnit]:
@@ -156,8 +129,6 @@ Entities: {', '.join(mem_data.get('entities', []))}""".strip()
 
         Args:
             messages: List of conversation messages with 'role' and 'content'
-            client: LLM client (Groq, OpenAI, etc.)
-            model: Model name to use
             ps1_prompt: Custom PS1 prompt (optional, uses default if None)
             min_confidence: Only store memories with confidence >= this threshold
 
@@ -166,9 +137,7 @@ Entities: {', '.join(mem_data.get('entities', []))}""".strip()
         """
 
         # Extract memories
-        memories = await self.extract_semantic_memories(
-            messages, client, model, ps1_prompt
-        )
+        memories = await self.extract_semantic_memories(messages, ps1_prompt)
 
         # Filter by confidence if needed
         if min_confidence > 0.0:
@@ -274,51 +243,123 @@ class CoreMemorySection(BaseModel):
     Examples: "User's name is David", "User enjoys Japanese cuisine", "Agent is helpful and concise"
 
     Should be passed to answering LLM each single time and kept fairly optimized and short.
-    When memory size exceeds 90% of capacity, triggers a controlled rewrite process.
+    Stored in MongoDB (not Qdrant) as it's always retrieved in full, no vector search needed.
     """
 
     type: Literal["core"] = Field(
         default="core", description="Type of the memory section."
     )
-    document_id: str = Field(..., description="UUID of the core memory document stored in mongodb.")
+    block_id: str = Field(..., description="ID of the memory block this core memory belongs to")
 
     @model_validator(mode="before")
     @classmethod
     def validate_from_string(cls, value: Any) -> Any:
-        """Allow initialization from a string (collection name) or dict."""
+        """Allow initialization from a string (block_id) or dict."""
         if isinstance(value, str):
-            return {"collection_name": value}
+            return {"block_id": value}
         return value
     
-    def create_new_core_memory(self, 
+    async def create_new_core_memory(
+        self, 
         messages: List[Dict[str, str]],
-        client,  # Groq/OpenAI client
-        model: str = "llama-3.1-8b-instant",
-        core_creation_prompt: str = CORE_MEMORY_PROMPT) -> CoreMemoryUnit:
-        """Create a new CoreMemoryUnit from conversation messages. Takes the old core memory, the new messages, and creates an updated core memory."""
-        pass
+        old_core_memory: Optional[CoreMemoryUnit] = None,
+        core_creation_prompt: str = CORE_MEMORY_PROMPT
+    ) -> CoreMemoryUnit:
+        """
+        Create updated CoreMemoryUnit from conversation messages and old core memory.
+        
+        Uses LangChain to generate replacement persona and human paragraphs.
+        
+        Args:
+            messages: Recent conversation messages
+            old_core_memory: Previous core memory (if any)
+            core_creation_prompt: System prompt for core memory extraction
+            
+        Returns:
+            New CoreMemoryUnit with updated persona and human content
+        """
+        # Format conversation
+        conversation_text = "\n".join(
+            [f"{msg['role'].upper()}: {msg['content']}" for msg in messages]
+        )
+        
+        # Format old core memory
+        old_persona = old_core_memory.persona_content if old_core_memory else ""
+        old_human = old_core_memory.human_content if old_core_memory else ""
+        
+        user_input = f"""Current Core Memory:
+PERSONA: {old_persona}
+HUMAN: {old_human}
 
-    def store_memory(self, memory_unit: CoreMemoryUnit) -> bool:
-        """Store a CoreMemoryUnit in the corresponding collection.
+Recent Conversation:
+{conversation_text}
+
+Generate updated core memory paragraphs that incorporate new stable facts."""
+
+        try:
+            # Create LangChain structured output chain
+            chain = llm_manager.create_structured_chain(
+                system_prompt=core_creation_prompt,
+                pydantic_model=CoreMemoryOutput,
+                temperature=0.0
+            )
+            
+            # Execute chain
+            result = await chain.ainvoke({"input": user_input})
+            
+            return CoreMemoryUnit(
+                persona_content=result.persona_content,
+                human_content=result.human_content
+            )
+
+        except Exception as e:
+            print(f"⚠️ Failed to extract core memory: {e}")
+            # Return old core memory or empty if extraction fails
+            if old_core_memory:
+                return old_core_memory
+            return CoreMemoryUnit(persona_content="", human_content="")
+
+    async def store_memory(self, memory_unit: CoreMemoryUnit) -> bool:
+        """
+        Store CoreMemoryUnit in MongoDB, replacing previous version.
 
         Args:
-            memory_unit (CoreMemoryUnit): The memory unit to store.
+            memory_unit: The core memory unit to store
+            
         Returns:
-            bool: True if storage was successful, False otherwise.
+            bool: True if storage was successful
         """
-        # Store human_content and persona_content as str in the document, replacing the previous version
-        pass
+        try:
+            await mongo_manager.save_core_memory(
+                block_id=self.block_id,
+                persona_content=memory_unit.persona_content,
+                human_content=memory_unit.human_content
+            )
+            return True
+        except Exception as e:
+            print(f"⚠️ Failed to store core memory: {e}")
+            return False
 
-    def get_memories(self) -> list[CoreMemoryUnit]:
-        """Retrieve all core memories (persona and human blocks).
+    async def get_memories(self) -> Optional[CoreMemoryUnit]:
+        """
+        Retrieve core memory from MongoDB.
 
         Core memories should always be loaded for the LLM context.
 
         Returns:
-            list: List of all CoreMemoryUnit instances.
+            CoreMemoryUnit instance or None if not found
         """
-        # Retrive the core memory (human and persona content) from the database using document_id
-        pass
+        try:
+            doc = await mongo_manager.get_core_memory(self.block_id)
+            if doc:
+                return CoreMemoryUnit(
+                    persona_content=doc.get("persona_content", ""),
+                    human_content=doc.get("human_content", "")
+                )
+            return None
+        except Exception as e:
+            print(f"⚠️ Failed to retrieve core memory: {e}")
+            return None
 
 
 

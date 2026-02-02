@@ -25,7 +25,7 @@ load_dotenv()
 
 # LLM Configuration
 client = Groq()
-MODEL = "llama-3.1-8b-instant"
+MODEL = "llama-3.3-70b-versatile"
 
 
 class ChatSession:
@@ -44,8 +44,8 @@ class ChatSession:
         self,
         user_id: str,
         session_description: str = "Chat session memories",
-        memory_window: int = 8,
-        keep_last_n: int = 2,
+        memory_window: int = 10,
+        keep_last_n: int = 4,
     ):
         """
         Initialize chat session.
@@ -138,9 +138,6 @@ Generate an updated recursive summary:"""
         print(f"{'='*70}")
         print(f"Processing {len(self.message_history)} messages...")
 
-        # STEP 1: Extract semantic memories (NOT stored yet)
-        print(f"\n📝 STEP 1: PS1 Semantic Memory Extraction")
-
         # APPROACH 1: Extract then store separately (more control)
         semantic_memories = (
             await self.memory_block.semantic_memories.extract_semantic_memories(
@@ -150,27 +147,11 @@ Generate an updated recursive summary:"""
 
         print(f"   ✓ Extracted {len(semantic_memories)} semantic memories")
 
-        if semantic_memories:
-            for i, mem in enumerate(semantic_memories, 1):
-                print(f"\n   Memory {i}:")
-                print(f"   - Type: {mem.type}")
-                print(f"   - Content: {mem.content[:80]}...")
-                print(f"   - Confidence: {mem.confidence}")
-                print(f"   - Keywords: {', '.join(mem.keywords[:5])}")
-                print(f"   - Embedding Text: {mem.embedding_text[:80]}...")
-
-        # STEP 2: Filter/Validate (optional - you have control here!)
-        print(f"\n🔍 STEP 2: Filtering Memories")
-        high_confidence_memories = [m for m in semantic_memories if m.confidence >= 0.7]
-        print(
-            f"   ✓ Kept {len(high_confidence_memories)}/{len(semantic_memories)} high-confidence memories"
-        )
-
         # STEP 3: Store filtered memories
         print(f"\n💾 STEP 3: Storing Memories")
-        for mem in high_confidence_memories:
+        for mem in semantic_memories:
             self.memory_block.semantic_memories.store_memory(mem)
-        print(f"   ✓ Stored {len(high_confidence_memories)} memories in vector DB")
+        print(f"   ✓ Stored {len(semantic_memories)} memories in vector DB")
 
         # Alternative: Use extract_and_store_memories() for one-liner
         # semantic_memories = await self.memory_block.semantic_memories.extract_and_store_memories(
