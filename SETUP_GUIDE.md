@@ -300,10 +300,4 @@ Failed to generate embeddings
 5. **Add MCP server** - Integrate with MCP protocol
 6. **Implement resource memory** - Add document ingestion (currently stubbed)
 
-## Migration from Old System
-
-Old code preserved in:
-- `main_old.py` - Original main file
-- `chat_pipeline_v1.py` - Old chat pipeline (can be removed after testing)
-
 New system is backwards-compatible with existing Qdrant collections for semantic memories.
