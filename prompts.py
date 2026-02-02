@@ -95,7 +95,13 @@ Output format (JSON only):
 }"""
 
 
-CORE_MEMORY_PROMPT = """Extract stable, enduring facts about the user from this conversation.
+CORE_MEMORY_PROMPT = """
+You are a core memory extractor. You have been given the present know core information, and a list
+of user messages.
+Extract stable, enduring facts about the user from this conversation and rewrite the core information
+
+Human Content is the information about the user that should be stored in core memory.
+Persona content is the information about how the assistant should interact with the user. 
 
 Focus ONLY on:
 - User's name, location, occupation
@@ -108,15 +114,7 @@ Do NOT extract:
 - Opinions that may change
 - Specific projects (those go to semantic memory)
 
-Output format (JSON array):
-
-[
-  {"content": "User's name is Alex"},
-  {"content": "User prefers concise, direct communication"},
-  {"content": "User is a software engineer"}
-]
-
-If no core memories found, return empty array: []"""
+If no core memories found, return dict with empty str"""
 
 
 SUMMARY_SYSTEM_PROMPT = """You are a conversation summarizer. Create a concise recursive summary that:

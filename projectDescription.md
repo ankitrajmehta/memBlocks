@@ -30,7 +30,7 @@ Every block contains four types of memory, like layers in your brain:
 ### Core Memory
 The "always remember this" layer. Small, essential facts about the user or AI behavior that should always be present. Think: user's name, key preferences, AI's persona. This never needs searching - it's just always there.
 
-### Event & Factual Memory  
+### Semantic Memory  
 The main knowledge layer. Facts about the world, people, things, plus timestamped events. This is where "Sarah is the ML team lead" or "Project deadline is March 15" lives. Searchable, timestamped, entity-tagged.
 
 ### Episodic Memory
@@ -50,15 +50,10 @@ Sarah (a product manager) has:
 - **Product Team Block**: Team members, project status, decisions
 - **Company Docs Block** (shared): HR policies, engineering guides
 - **ML Learning Block**: Concepts she's learning, resources
+etc
 
-When Sarah asks: "What did the team decide about the AWS migration?"
-- System searches: Product Team Block + Company Docs Block
-- Ignores: Personal Block, ML Learning Block
-- Finds: Team discussion from last week + AWS best practices doc
+She can switch between these blocks as per her need
 
-When Sarah asks: "What's that restaurant my friend recommended?"
-- System searches: Personal Block only
-- Finds: "John recommended Sakura Sushi on Jan 10"
 
 ### Sharing and Collaboration
 
@@ -88,17 +83,12 @@ This extraction uses an LLM to understand the true intent and pull out the core 
 
 **Step 3: Which memory blocks matter?**
 
-If user has 10 active blocks, don't search all of them. Look at:
-- Which blocks mention the entities we extracted? (Sarah → Product Team Block)
-- Which blocks have descriptions matching the topic? (deployment → Product Team Block, Company Docs)
-- Which blocks were used recently? (recency signal)
-
-Select 2-3 most relevant blocks.
+The ones that are selected by sarah to be attached in this session
 
 **Step 4: Which memory sections within those blocks?**
 
 The extractor creates specialized search queries for each section type:
-- Event & Factual: "Sarah deployment issues" (looking for facts Sarah stated)
+- Semantic: "Sarah deployment issues" (looking for facts Sarah stated)
 - Episodic: "Sarah deployment discussion" (looking for past conversations)
 - Resources: "deployment troubleshooting guide" (looking for documentation)
 

@@ -1,11 +1,12 @@
 from pydantic import BaseModel, Field, model_validator
-from prompts import PS1_SEMANTIC_PROMPT
+from prompts import PS1_SEMANTIC_PROMPT, CORE_MEMORY_PROMPT
 from models.units import (
     SemanticMemoryUnit,
     CoreMemoryUnit,
     ResourceMemoryUnit,
     MemoryUnitMetaData,
 )
+from models.extractions import Semantic_extraction
 from typing import Literal, Optional, Any, List, Dict
 from concurrent.futures import ThreadPoolExecutor
 from vector_db.vector_db_manager import VectorDBManager
@@ -210,23 +211,6 @@ Entities: {', '.join(mem_data.get('entities', []))}""".strip()
     # RETRIEVAL
     # ========================================================================
 
-    def retrive_memories_single_query(self, query_text: str, top_k: int = 5) -> list:
-        """Retrieve top_k similar SemanticMemoryUnit instances based on a single query text.
-
-        Args:
-            query_text (str): The text to query against stored memories.
-            top_k (int): Number of top similar memories to retrieve.
-        Returns:
-            list: List of retrieved SemanticMemoryUnit instances.
-        """
-        embedder = VectorDBManager.get_embedder()
-        query_vector = embedder.embed_text(query_text)
-
-        results = VectorDBManager.retrieve_from_vector(
-            self.collection_name, query_vector, top_k
-        )
-        return [SemanticMemoryUnit(**hit.payload) for hit in results]
-
     def retrieve_memories(self, query_texts: list[str], top_k: int = 5) -> list:
         """Retrieve top_k similar SemanticMemoryUnit instances based on query texts.
 
@@ -296,9 +280,7 @@ class CoreMemorySection(BaseModel):
     type: Literal["core"] = Field(
         default="core", description="Type of the memory section."
     )
-    collection_name: str = Field(
-        description="qDrant collection that stores CoreMemoryUnit instances"
-    )
+    document_id: str = Field(..., description="UUID of the core memory document stored in mongodb.")
 
     @model_validator(mode="before")
     @classmethod
@@ -307,6 +289,14 @@ class CoreMemorySection(BaseModel):
         if isinstance(value, str):
             return {"collection_name": value}
         return value
+    
+    def create_new_core_memory(self, 
+        messages: List[Dict[str, str]],
+        client,  # Groq/OpenAI client
+        model: str = "llama-3.1-8b-instant",
+        core_creation_prompt: str = CORE_MEMORY_PROMPT) -> CoreMemoryUnit:
+        """Create a new CoreMemoryUnit from conversation messages. Takes the old core memory, the new messages, and creates an updated core memory."""
+        pass
 
     def store_memory(self, memory_unit: CoreMemoryUnit) -> bool:
         """Store a CoreMemoryUnit in the corresponding collection.
@@ -316,84 +306,10 @@ class CoreMemorySection(BaseModel):
         Returns:
             bool: True if storage was successful, False otherwise.
         """
-        embedder = VectorDBManager.get_embedder()
-        # Combine persona and human content for embedding
-        combined_content = f"{memory_unit.persona_content} {memory_unit.human_content}"
-        vector = embedder.embed_text(combined_content)
-        payload = memory_unit.model_dump()
-        return VectorDBManager.store_vector(self.collection_name, vector, payload)
-
-    def retrive_memories_single_query(self, query_text: str, top_k: int = 5) -> list:
-        """Retrieve top_k similar CoreMemoryUnit instances based on a single query text.
-
-        Args:
-            query_text (str): The text to query against stored memories.
-            top_k (int): Number of top similar memories to retrieve.
-        Returns:
-            list: List of retrieved CoreMemoryUnit instances.
-        """
-        embedder = VectorDBManager.get_embedder()
-        query_vector = embedder.embed_text(query_text)
-
-        results = VectorDBManager.retrieve_from_vector(
-            self.collection_name, query_vector, top_k
-        )
-        return [CoreMemoryUnit(**hit.payload) for hit in results]
-
-    def retrieve_memories(self, query_texts: list[str], top_k: int = 5) -> list:
-        """Retrieve top_k similar CoreMemoryUnit instances based on the query texts.
-
-        Args:
-            query_texts (list[str]): The texts to query against stored memories.
-            top_k (int): Number of top similar memories to retrieve.
-        Returns:
-            list: List of lists of retrieved CoreMemoryUnit instances (one list per query).
-        """
-        embedder = VectorDBManager.get_embedder()
-
-        query_vectors = embedder.embed_documents(query_texts)
-
-        def _search(vector: list) -> list[CoreMemoryUnit]:
-            results = VectorDBManager.retrieve_from_vector(
-                self.collection_name, vector, top_k
-            )
-            return [CoreMemoryUnit(**hit.payload) for hit in results]
-
-        with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
-            grouped_results = list(executor.map(_search, query_vectors))
-
-        # Remove duplicates across different query results
-        seen_contents = set()
-        deduplicated_results = []
-
-        for result_group in grouped_results:
-            unique_group = []
-            for memory in result_group:
-                # Use combined content for deduplication
-                combined_content = f"{memory.persona_content} {memory.human_content}"
-                if combined_content not in seen_contents:
-                    seen_contents.add(combined_content)
-                    unique_group.append(memory)
-            deduplicated_results.append(unique_group)
-
-        return deduplicated_results
-
-    def search_in_payload(
-        self, filter_query: dict, top_k: int = 5
-    ) -> list[CoreMemoryUnit]:
-        """Search memories based on payload filter.
-
-        Args:
-            filter_query (dict): The filter query to apply on payload.
-            top_k (int): Number of top similar memories to retrieve.
-        Returns:
-            list: List of retrieved CoreMemoryUnit instances.
-        """
-        # results = VectorDBManager.retrieve_with_filter(self.collection_name, filter_query, top_k)
-        # return [CoreMemoryUnit(**hit.payload) for hit in results]
+        # Store human_content and persona_content as str in the document, replacing the previous version
         pass
 
-    def get_all_memories(self) -> list[CoreMemoryUnit]:
+    def get_memories(self) -> list[CoreMemoryUnit]:
         """Retrieve all core memories (persona and human blocks).
 
         Core memories should always be loaded for the LLM context.
@@ -401,20 +317,9 @@ class CoreMemorySection(BaseModel):
         Returns:
             list: List of all CoreMemoryUnit instances.
         """
-        # This should retrieve all memories without limit for passing to LLM
-        # Implementation depends on VectorDBManager's capability to retrieve all
+        # Retrive the core memory (human and persona content) from the database using document_id
         pass
 
-    def check_capacity_threshold(self, threshold: float = 0.9) -> bool:
-        """Check if memory size exceeds the specified capacity threshold.
-
-        Args:
-            threshold (float): Capacity threshold (default 0.9 for 90%)
-        Returns:
-            bool: True if threshold exceeded, False otherwise.
-        """
-        # Implementation to check if memory needs rewriting
-        pass
 
 
 class ResourceMemorySection(BaseModel):

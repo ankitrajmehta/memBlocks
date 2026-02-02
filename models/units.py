@@ -122,24 +122,3 @@ class ResourceMemoryUnit(BaseModel):
     resource_link: Optional[str] = Field(
         None, description="Link or path or message_ids to the resource if applicable."
     )
-
-    # # PS1-specific fields for resources
-    # keywords: Optional[list[str]] = Field(
-    #     [],
-    #     description="PS1: Key terms extracted from the resource for better retrieval.",
-    # )
-    # tags: Optional[list[str]] = Field(
-    #     [],
-    #     description="PS1: Categorical tags for the resource (domain, type, purpose).",
-    # )
-    # entities: Optional[list[str]] = Field(
-    #     [], description="PS1: Named entities found in the resource."
-    # )
-    # context_sentence: Optional[str] = Field(
-    #     "",
-    #     description="PS1: One sentence summary of the resource's purpose and content.",
-    # )
-    # embedding_text: Optional[str] = Field(
-    #     "",
-    #     description="PS1: Enriched text for embedding (summary + keywords + tags + context).",
-    # )
