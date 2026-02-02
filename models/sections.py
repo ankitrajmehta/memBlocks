@@ -22,6 +22,9 @@ class SemanticMemorySection(BaseModel):
         if isinstance(value, str):
             return {"collection_name": value}
         return value
+    
+    def _ps1_extract_semantic_memories():
+        pass
 
     def store_memory(self, memory_unit: SemanticMemoryUnit) -> bool:
         """Store a SemanticMemoryUnit in the corresponding collection.
@@ -132,19 +135,16 @@ class CoreMemorySection(BaseModel):
     type: Literal["core"] = Field(
         default="core", description="Type of the memory section."
     )
-    collection_name: str = Field(
-        description="qDrant collection that stores CoreMemoryUnit instances"
-    )
+    # collection_name: str = Field(
+    #     description="qDrant collection that stores CoreMemoryUnit instances"
+    # )
 
-    @model_validator(mode="before")
-    @classmethod
-    def validate_from_string(cls, value: Any) -> Any:
-        """Allow initialization from a string (collection name) or dict."""
-        if isinstance(value, str):
-            return {"collection_name": value}
-        return value
+    document_id: str = Field(
+        description="mongodb document in `core memories collection` that stores CoreMemoryUnit instances"
+    )   
 
-    def store_memory(self, memory_unit: CoreMemoryUnit) -> bool:
+
+    def store_memory(self, memory_unit: CoreMemoryUnit, type: Literal["persona", "human"]) -> bool:
         """Store a CoreMemoryUnit in the corresponding collection.
 
         Args:
@@ -152,78 +152,81 @@ class CoreMemorySection(BaseModel):
         Returns:
             bool: True if storage was successful, False otherwise.
         """
-        embedder = VectorDBManager.get_embedder()
-        vector = embedder.embed_text(memory_unit.content)
-        payload = memory_unit.model_dump()
-        return VectorDBManager.store_vector(self.collection_name, vector, payload)
-
-    def retrive_memories_single_query(self, query_text: str, top_k: int = 5) -> list:
-        """Retrieve top_k similar CoreMemoryUnit instances based on a single query text.
-
-        Args:
-            query_text (str): The text to query against stored memories.
-            top_k (int): Number of top similar memories to retrieve.
-        Returns:
-            list: List of retrieved CoreMemoryUnit instances.
-        """
-        embedder = VectorDBManager.get_embedder()
-        query_vector = embedder.embed_text(query_text)
-
-        results = VectorDBManager.retrieve_from_vector(
-            self.collection_name, query_vector, top_k
-        )
-        return [CoreMemoryUnit(**hit.payload) for hit in results]
-
-    def retrieve_memories(self, query_texts: list[str], top_k: int = 5) -> list:
-        """Retrieve top_k similar CoreMemoryUnit instances based on the query texts.
-
-        Args:
-            query_texts (list[str]): The texts to query against stored memories.
-            top_k (int): Number of top similar memories to retrieve.
-        Returns:
-            list: List of lists of retrieved CoreMemoryUnit instances (one list per query).
-        """
-        embedder = VectorDBManager.get_embedder()
-
-        query_vectors = embedder.embed_documents(query_texts)
-
-        def _search(vector: list) -> list[CoreMemoryUnit]:
-            results = VectorDBManager.retrieve_from_vector(
-                self.collection_name, vector, top_k
-            )
-            return [CoreMemoryUnit(**hit.payload) for hit in results]
-
-        with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
-            grouped_results = list(executor.map(_search, query_vectors))
-
-        # Remove duplicates across different query results
-        seen_contents = set()
-        deduplicated_results = []
-
-        for result_group in grouped_results:
-            unique_group = []
-            for memory in result_group:
-                if memory.content not in seen_contents:
-                    seen_contents.add(memory.content)
-                    unique_group.append(memory)
-            deduplicated_results.append(unique_group)
-
-        return deduplicated_results
-
-    def search_in_payload(
-        self, filter_query: dict, top_k: int = 5
-    ) -> list[CoreMemoryUnit]:
-        """Search memories based on payload filter.
-
-        Args:
-            filter_query (dict): The filter query to apply on payload.
-            top_k (int): Number of top similar memories to retrieve.
-        Returns:
-            list: List of retrieved CoreMemoryUnit instances.
-        """
-        # results = VectorDBManager.retrieve_with_filter(self.collection_name, filter_query, top_k)
-        # return [CoreMemoryUnit(**hit.payload) for hit in results]
+        # embedder = VectorDBManager.get_embedder()
+        # vector = embedder.embed_text(memory_unit.content)
+        # payload = memory_unit.model_dump()
+        # return VectorDBManager.store_vector(self.collection_name, vector, payload)
+        # TODO: Modify mongodb collection's document based on type (persona/human)
         pass
+
+    #core memory doesnt need retrival as all core memories are always loaded for LLM context
+    # def retrive_memories_single_query(self, query_text: str, top_k: int = 5) -> list:
+    #     """Retrieve top_k similar CoreMemoryUnit instances based on a single query text.
+
+    #     Args:
+    #         query_text (str): The text to query against stored memories.
+    #         top_k (int): Number of top similar memories to retrieve.
+    #     Returns:
+    #         list: List of retrieved CoreMemoryUnit instances.
+    #     """
+    #     embedder = VectorDBManager.get_embedder()
+    #     query_vector = embedder.embed_text(query_text)
+
+    #     results = VectorDBManager.retrieve_from_vector(
+    #         self.collection_name, query_vector, top_k
+    #     )
+    #     return [CoreMemoryUnit(**hit.payload) for hit in results]
+
+    # def retrieve_memories(self, query_texts: list[str], top_k: int = 5) -> list:
+    #     """Retrieve top_k similar CoreMemoryUnit instances based on the query texts.
+
+    #     Args:
+    #         query_texts (list[str]): The texts to query against stored memories.
+    #         top_k (int): Number of top similar memories to retrieve.
+    #     Returns:
+    #         list: List of lists of retrieved CoreMemoryUnit instances (one list per query).
+    #     """
+    #     embedder = VectorDBManager.get_embedder()
+
+    #     query_vectors = embedder.embed_documents(query_texts)
+
+    #     def _search(vector: list) -> list[CoreMemoryUnit]:
+    #         results = VectorDBManager.retrieve_from_vector(
+    #             self.collection_name, vector, top_k
+    #         )
+    #         return [CoreMemoryUnit(**hit.payload) for hit in results]
+
+    #     with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
+    #         grouped_results = list(executor.map(_search, query_vectors))
+
+    #     # Remove duplicates across different query results
+    #     seen_contents = set()
+    #     deduplicated_results = []
+
+    #     for result_group in grouped_results:
+    #         unique_group = []
+    #         for memory in result_group:
+    #             if memory.content not in seen_contents:
+    #                 seen_contents.add(memory.content)
+    #                 unique_group.append(memory)
+    #         deduplicated_results.append(unique_group)
+
+    #     return deduplicated_results
+
+    # def search_in_payload(
+    #     self, filter_query: dict, top_k: int = 5
+    # ) -> list[CoreMemoryUnit]:
+    #     """Search memories based on payload filter.
+
+    #     Args:
+    #         filter_query (dict): The filter query to apply on payload.
+    #         top_k (int): Number of top similar memories to retrieve.
+    #     Returns:
+    #         list: List of retrieved CoreMemoryUnit instances.
+    #     """
+    #     # results = VectorDBManager.retrieve_with_filter(self.collection_name, filter_query, top_k)
+    #     # return [CoreMemoryUnit(**hit.payload) for hit in results]
+    #     pass
 
     def get_all_memories(self) -> list[CoreMemoryUnit]:
         """Retrieve all core memories (persona and human blocks).
@@ -249,6 +252,7 @@ class CoreMemorySection(BaseModel):
         pass
 
 
+# TODO: Change implememtation, should work like traditional document RAG, with chunking, embeddings, retrieval etc. Not memory unit based.
 class ResourceMemorySection(BaseModel):
     """A section representing resource memory.
 

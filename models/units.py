@@ -103,9 +103,13 @@ class CoreMemoryUnit(BaseModel):
     into context. No PS1 needed - kept simple and direct.
     """
 
-    content: str = Field(
+    persona_content: str = Field(
         ...,
-        description="The main content of the core memory. Extracted from user input or documents in a concise form.",
+        description="The persona to give to the LLM.",
+    )
+    human_content: str = Field(
+        ...,
+        description="The stable fact about the user to give to the LLM.",
     )
 
 
