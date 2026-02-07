@@ -68,7 +68,8 @@ Extract the following components:
   "entities": ["entity1", "entity2", "entity3"]
 }}
 
-**Content to analyze:**"""
+**Content to analyze:**
+"""
 
 
 CORE_MEMORY_PROMPT = """You are a core memory extractor. Your task is to update the core memory based on the conversation history.
