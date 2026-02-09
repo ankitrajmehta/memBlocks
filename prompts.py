@@ -5,96 +5,71 @@ in one place and reused across modules.
 """
 
 # TODO: change prompt so it can produce multiple memories from the conversation instead of just one. Each memory should be minimal and focused on a single topic or fact.
-PS1_SEMANTIC_PROMPT = """Generate a structured analysis of the following conversation for semantic memory storage.
+PS1_SEMANTIC_PROMPT = """You are a memory extraction specialist. Your task is to analyze user interactions and extract structured information for long-term memory storage and retrieval.
 
 Your output will be used for:
-- vector embedding and semantic retrieval
-- memory linking with past events and facts
-- future memory refinement and evolution
+- Semantic search via vector embeddings
+- Linking related memories across time
+- Evolving and refining knowledge as new information arrives
 
-Instructions:
+Extract the following components:
 
-1. Keywords
-- Ranked list (most to least important) combining BOTH specific key terms AND categorical tags
-- Key terms (specific): Identify salient, retrieval-effective terms
-  • Focus on: concrete technical nouns, actions, constraints, entities
-  • Examples: "Redis", "LRU caching", "RAM optimization", "40% reduction", "Sarah"
-  • Avoid: generic verbs ("use", "do", "make") unless domain-specific, speaker names, timestamps, conversational filler
-- Category tags (general): Generate high-level categorical classifications
-  • Domain tags: programming, systems, AI, backend, infrastructure, business
-  • Functional tags: optimization, design, debugging, performance, security, deployment
-  • Memory-nature tags: event, factual, planning, concern, preference, tutorial, guide
-- Minimum 5 keywords recommended for optimal retrieval
-- Order from most specific to most general: specific tech/entity → concrete concept → approach → functional category → domain → memory nature
-- Avoid redundancy across the entire list
-- Example ranking: ["Redis", "LRU caching", "RAM optimization", "caching strategy", "performance", "backend", "optimization"]
+1. **Keywords** (3-6 items)
+   - Identify concrete, retrieval-effective terms
+   - Prioritize: technical nouns, specific actions, domain entities, constraints
+   - Exclude: generic verbs ("use", "make", "do"), conversational filler, speaker names
+   - Order by importance (most salient first)
+   - Ensure keywords are semantically rich for embedding generation
+   
+   Examples:
+   Good Keywords examples: ["neural networks", "backpropagation", "gradient descent"]
+   Bad Keywords examples: ["AI", "learning", "things"]
 
-2. content
-   - Write exactly ONE concise sentence that captures:
-     • the primary domain or topic
-     • the user's intent, concern, or goal
-     • whether this represents new information, a refinement, or continuation
-   - The sentence should be extensible for future memory refinement.
+2. **Context** (exactly ONE sentence)
+   - Capture: primary topic, user's intent/goal, and information status (new/refinement/continuation)
+   - Write in a way that allows future updates as related memories emerge
+   - Be specific and actionable
+   
+   Examples:
+   Good Context Examples: "User is exploring transformer architecture optimization techniques to reduce inference latency in production environments"
+   Bad Context Examples: "User asked about AI stuff"
 
+3. **Type** (one of: fact | event | opinion)
+   - **fact**: Objective, verifiable information or established knowledge
+   - **event**: Time-bound occurrence, past action, or planned activity
+   - **opinion**: Subjective preference, belief, or perspective
+   
+   Examples:
+   - "Python uses garbage collection" → fact
+   - "Had meeting with John yesterday about API redesign" → event
+   - "I prefer functional programming over OOP" → opinion
 
-3. Type
-   - Classify as: `fact`, `event`, or `opinion`
-   - fact: objective information
-   - event: past or planned occurrence
-   - opinion: user's perspective or preference
+4. **Entities** (2-8 items)
+   - Extract: proper nouns, technologies, tools, frameworks, people, organizations, domain concepts
+   - Focus on retrieval-critical entities that establish context
+   - Include version numbers or specific identifiers when mentioned
+   
+   Examples:
+   Good Entities Examples: ["React 18", "PostgreSQL", "AWS Lambda", "Docker"]
+   Bad Entities Examples: ["thing", "stuff", "it"]
 
-4. Entities
-   - Extract key entities: people, places, technologies, tools, concepts
-   - Focus on nouns and proper nouns important for retrieval
+**Critical Guidelines:**
+- Output ONLY valid JSON, no additional text or explanation
+- Ensure all fields are present
+- Keywords and entities should have NO overlap with generic stopwords
+- Context must be a complete, grammatically correct sentence
+- Type must be exactly one of: fact, event, opinion
 
-Output format (JSON only):
-
-{
-  "keywords": ["keyword1", "keyword2", "keyword3"],
-  "context": "One sentence description",
-  "type": "fact | event | opinion",
-  "entities": ["entity1", "entity2"]
-}"""
-
-# TODO: Get rid during resource redesign
-PS1_RESOURCE_PROMPT = """Analyze this resource content for memory storage and retrieval.
-
-The resource could be a document, image description, video transcript, or web link.
-
-IMPORTANT: Extract information ONLY from the resource content itself, NOT from any surrounding context.
-
-Instructions:
-
-1. Keywords
-   - Extract key terms that make this resource findable
-   - Focus on: main topics, technologies, names, concepts mentioned IN the resource
-   - At least 3 keywords
-
-2. Context
-   - ONE sentence describing:
-     • what the resource is about (based ONLY on its content)
-     • its purpose or type (guide, reference, tutorial, etc.)
-   - Do NOT mention user projects or plans
-
-3. Tags
-   - Categorize with tags like:
-     • resource type (document, guide, reference, tutorial)
-     • domain (programming, business, personal)
-     • topics covered
-   - At least 3 tags
-
-4. Entities
-   - Named entities: people, companies, products, tools mentioned IN the resource
-   - Important for finding this resource later
-
-Output format (JSON only):
+**Output Format:**
 {{
   "keywords": ["keyword1", "keyword2", "keyword3"],
-  "content": "One concise sentence description",
-  "type": "event | factual | opinion",
-  "entities": ["entity1", "entity2"],
-  "confidence": 0.85
-}}"""
+  "context": "Single sentence capturing domain, intent, and information status",
+  "type": "fact",
+  "entities": ["entity1", "entity2", "entity3"]
+}}
+
+**Content to analyze:**
+"""
 
 
 CORE_MEMORY_PROMPT = """You are a core memory extractor. Your task is to update the core memory based on the conversation history.
@@ -130,16 +105,155 @@ Output format:
 }}"""
 
 
-SUMMARY_SYSTEM_PROMPT = """You are a conversation summarizer. Create a concise recursive summary that:
-1. Builds upon the previous summary (if any)
-2. Captures key topics, decisions, and important information
-3. Maintains temporal context
-4. Is concise but comprehensive
+SUMMARY_SYSTEM_PROMPT = """
+You are a conversation summarizer.
+
+Create a concise recursive summary that:
+1. Incrementally builds upon the previous summary (if exists), preserving earlier information unless explicitly corrected by new content
+2. Captures key topics, decisions, constraints, and important factual information
+3. Maintains temporal ordering and cause–effect relationships where relevant
+4. Avoids speculation, interpretation, or introducing new information
+5. Remains concise while retaining all critical context
+
+Do NOT:
+- Include casual or irrelevant dialogue
+- Remove previously summarized information unless it is clearly contradicted
 
 Output format (JSON only):
 {{
-  "summary": "Your concise summary text here"
-}}"""
+  "summary": "Your concise recursive summary here"
+}}
+
+"""
+
+
+PS2_SEMANTIC_PROMPT = """
+You are an AI Memory Resolution and Evolution Agent.
+
+Your responsibility is to maintain a long-term, structured memory store by
+carefully integrating new information without destroying historical knowledge.
+
+You will analyze ONE proposed new memory (mn) together with its top-k
+semantically related existing memories and produce a conservative memory
+transition plan.
+---
+
+### SYMBOL GLOSSARY (IMPORTANT)
+
+* mn: Proposed new memory (not yet stored)
+* Xi: Natural language content of a memory (atomic statement)
+* Gi: Tags / semantic labels associated with a memory
+* type: One of {fact, event, opinion}
+* confidence: Float in [0.0, 1.0] indicating epistemic confidence
+* entities: Canonical named entities referenced in the memory
+
+  * active: currently valid
+  * archived: historically valid but superseded
+  * invalid: determined to be incorrect
+
+---
+
+### CORE PRINCIPLES (MUST FOLLOW)
+
+* Never delete memories; use **ARCHIVE** or **INVALIDATE**
+* FACT memories are immutable relative to EVENT or OPINION
+* OPINIONS may coexist with contradictions
+* Contradictions must be handled explicitly
+* All updates must be **field-scoped and additive** where possible
+* `confidence_delta` must be small (|Δ| ≤ 0.1) and justified by new evidence
+
+---
+
+### NEW MEMORY PROPOSAL (mn)
+
+* Xi: {Xi}
+* Gi: {Gi}
+* type: {type}
+* confidence: {confidence}
+* entities: {entities}
+* memory_time: {memory_time}
+* source: {source}
+
+**Note:** mn is NOT yet stored.
+
+---
+
+### CANDIDATE EXISTING MEMORIES
+
+{candidate_memories}
+
+
+Each candidate includes:
+
+* memory_id
+* Xi
+* Gi
+* type
+* confidence
+* entities
+* status
+* memory_time
+* updated_at
+
+---
+
+### DECISION OBJECTIVES
+
+1. Decide whether mn should be:
+
+   * **STORED** as a new memory, or
+   * **MERGED** into a single existing memory
+
+2. For EACH candidate existing memory, decide **exactly ONE** action:
+
+   * NOOP
+   * UPDATE (refinement only, no semantic overwrite)
+   * ARCHIVE (superseded but historically valid)
+   * INVALIDATE (clearly incorrect)
+
+---
+
+### CONTRADICTION RULES
+
+* **FACT vs FACT**
+  Prefer higher confidence, newer, and better-sourced memory.
+  The weaker memory must be ARCHIVED or INVALIDATED.
+
+* **EVENT vs FACT**
+  FACT is immutable; EVENT may be archived or refined.
+
+* **OPINION**
+  May coexist with contradictions; do not invalidate unless clearly erroneous.
+
+---
+
+### OUTPUT FORMAT (JSON ONLY)
+
+{{
+  "new_memory_decision": {
+    "operation": "STORE | MERGE",
+    "merge_target_memory_id": null,
+    "final_type": "fact | event | opinion",
+    "final_confidence": 0.0,
+    "final_entities": [],
+    "initial_status": "active"
+  },
+
+  "existing_memory_updates": [
+    {
+      "memory_id": "",
+      "action": "NOOP | UPDATE | ARCHIVE | INVALIDATE",
+      "field_updates": {
+        "Xi_append": null,
+        "Gi_add": [],
+        "entities_add": [],
+        "confidence_delta": null
+      }
+    }
+  ]
+}}
+
+"""
 
 
 ASSISTANT_BASE_PROMPT = """You are a helpful AI assistant with access to persistent memory.
@@ -148,3 +262,5 @@ When using context:
 - Synthesize information rather than repeating it
 - If semantic memories and resources overlap, cite the resource as primary source
 - Provide concise, informed responses based on available context"""
+
+
