@@ -18,7 +18,7 @@ Instructions:
 - Ranked list (most to least important) combining BOTH specific key terms AND categorical tags
 - Key terms (specific): Identify salient, retrieval-effective terms
   • Focus on: concrete technical nouns, actions, constraints, entities
-  • Examples: "Redis", "LRU caching", "RAM optimization", "40% reduction", "Sarah"
+  • Examples: "Redis", "LRU caching", "RAM optimization", "Sarah"
   • Avoid: generic verbs ("use", "do", "make") unless domain-specific, speaker names, timestamps, conversational filler
 - Category tags (general): Generate high-level categorical classifications
   • Domain tags: programming, systems, AI, backend, infrastructure, business
@@ -36,7 +36,6 @@ Instructions:
      • whether this represents new information, a refinement, or continuation
    - The sentence should be extensible for future memory refinement.
 
-
 3. Type
    - Classify as: `fact`, `event`, or `opinion`
    - fact: objective information
@@ -44,57 +43,19 @@ Instructions:
    - opinion: user's perspective or preference
 
 4. Entities
-   - Extract key entities: people, places, technologies, tools, concepts
+   - Extract key entities: people, places, technologies, tools
    - Focus on nouns and proper nouns important for retrieval
 
 Output format (JSON only):
 
-{
+[{{
   "keywords": ["keyword1", "keyword2", "keyword3"],
   "context": "One sentence description",
   "type": "fact | event | opinion",
   "entities": ["entity1", "entity2"]
-}"""
-
-# TODO: Get rid during resource redesign
-PS1_RESOURCE_PROMPT = """Analyze this resource content for memory storage and retrieval.
-
-The resource could be a document, image description, video transcript, or web link.
-
-IMPORTANT: Extract information ONLY from the resource content itself, NOT from any surrounding context.
-
-Instructions:
-
-1. Keywords
-   - Extract key terms that make this resource findable
-   - Focus on: main topics, technologies, names, concepts mentioned IN the resource
-   - At least 3 keywords
-
-2. Context
-   - ONE sentence describing:
-     • what the resource is about (based ONLY on its content)
-     • its purpose or type (guide, reference, tutorial, etc.)
-   - Do NOT mention user projects or plans
-
-3. Tags
-   - Categorize with tags like:
-     • resource type (document, guide, reference, tutorial)
-     • domain (programming, business, personal)
-     • topics covered
-   - At least 3 tags
-
-4. Entities
-   - Named entities: people, companies, products, tools mentioned IN the resource
-   - Important for finding this resource later
-
-Output format (JSON only):
-{{
-  "keywords": ["keyword1", "keyword2", "keyword3"],
-  "content": "One concise sentence description",
-  "type": "event | factual | opinion",
-  "entities": ["entity1", "entity2"],
-  "confidence": 0.85
-}}"""
+}}
+,...
+]"""
 
 
 CORE_MEMORY_PROMPT = """You are a core memory extractor. Your task is to update the core memory based on the conversation history.

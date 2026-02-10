@@ -261,6 +261,7 @@ Generate an updated recursive summary that incorporates the new conversation."""
         # Add assistant response to history
         self.message_history.append({"role": "assistant", "content": assistant_response})
         
+        # TODO: Make background thread and run this in background, assistant_response should be returned immediately
         # Process memory window if threshold reached
         if len(self.message_history) >= self.memory_window:
             await self._process_memory_window()

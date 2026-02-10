@@ -163,6 +163,9 @@ Entities: {', '.join(result.entities)}""".strip()
         Returns:
             bool: True if storage was successful, False otherwise.
         """
+        # TODO: Retrieve semantically similar existing memories (top-k)
+        # TODO: Use PS2 to figure out to ADD or update existing memory
+
         embedder = VectorDBManager.get_embedder()
 
         # PS1: Use enriched embedding_text if available, otherwise fall back to content

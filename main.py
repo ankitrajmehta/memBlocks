@@ -200,8 +200,8 @@ class MemBlocksCLI:
             # Initialize chat service
             self.chat_service = ChatService(
                 memory_block=selected_block,
-                memory_window=5,
-                keep_last_n=3
+                memory_window=10,
+                keep_last_n=4
             )
             
             print(f"\n✅ Chat session started!")
