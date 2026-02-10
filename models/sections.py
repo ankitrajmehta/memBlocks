@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
+from config import settings
 from prompts import PS1_SEMANTIC_PROMPT, CORE_MEMORY_PROMPT
 from models.units import (
     SemanticMemoryUnit,
@@ -80,7 +81,7 @@ Extract structured semantic memories. Analyze each significant piece of informat
             chain = llm_manager.create_structured_chain(
                 system_prompt=ps1_prompt,
                 pydantic_model=SemanticExtractionOutput,
-                temperature=0.0
+                temperature=settings.llm_semantic_extraction_temperature
             )
             
             # Execute chain
@@ -304,7 +305,7 @@ Generate updated core memory paragraphs that incorporate new stable facts."""
             chain = llm_manager.create_structured_chain(
                 system_prompt=core_creation_prompt,
                 pydantic_model=CoreMemoryOutput,
-                temperature=0.0
+                temperature=settings.llm_core_extraction_temperature
             )
             
             # Execute chain
