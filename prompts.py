@@ -25,14 +25,14 @@ Extract the following components:
    Good Keywords examples: ["neural networks", "backpropagation", "gradient descent"]
    Bad Keywords examples: ["AI", "learning", "things"]
 
-2. **Context** (exactly ONE sentence)
+2. **content** (exactly ONE sentence)
    - Capture: primary topic, user's intent/goal, and information status (new/refinement/continuation)
    - Write in a way that allows future updates as related memories emerge
    - Be specific and actionable
    
    Examples:
-   Good Context Examples: "User is exploring transformer architecture optimization techniques to reduce inference latency in production environments"
-   Bad Context Examples: "User asked about AI stuff"
+   Good content Examples: "User is exploring transformer architecture optimization techniques to reduce inference latency in production environments"
+   Bad content Examples: "User asked about AI stuff"
 
 3. **Type** (one of: fact | event | opinion)
    - **fact**: Objective, verifiable information or established knowledge
@@ -57,15 +57,16 @@ Extract the following components:
 - Output ONLY valid JSON, no additional text or explanation
 - Ensure all fields are present
 - Keywords and entities should have NO overlap with generic stopwords
-- Context must be a complete, grammatically correct sentence
+- content must be a complete, grammatically correct sentence
 - Type must be exactly one of: fact, event, opinion
 
 **Output Format:**
 {{
   "keywords": ["keyword1", "keyword2", "keyword3"],
-  "context": "Single sentence capturing domain, intent, and information status",
+  "content": "Single sentence capturing domain, intent, and information status",
   "type": "fact",
   "entities": ["entity1", "entity2", "entity3"]
+  "confidence" : "A score between 0 and 1"
 }}
 
 **Content to analyze:**
