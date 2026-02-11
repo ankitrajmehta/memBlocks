@@ -1,11 +1,12 @@
 import requests
 import json
 from concurrent.futures import ThreadPoolExecutor
+from config import settings
 
 
 class OllamaEmbeddings:
 
-    def __init__(self, model = "nomic-embed-text", base_url = "http://localhost:11434"):
+    def __init__(self, model = settings.embeddings_model, base_url = settings.ollama_base_url):
         self.model = model
         self.base_url = base_url
         self.embeddings_endpoint = f"{base_url}/api/embeddings"

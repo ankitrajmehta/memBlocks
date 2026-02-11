@@ -1,13 +1,21 @@
 """Centralized LLM manager using LangChain."""
 
-import os
 from typing import Optional
-from dotenv import load_dotenv
+from config import settings
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
-load_dotenv()
-
+# For instrumentation (using arize. accessible at https://app.arize.com/)
+from openinference.instrumentation.langchain import LangChainInstrumentor
+from arize.otel import register
+from getpass import getpass
+tracer_provider = register(
+    space_id=settings.arize_space_id,
+    api_key=settings.arize_api_key,
+    project_name=settings.arize_project_name,
+)
+LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+     
 
 class LLMManager:
     """Singleton manager for LLM instances and chains."""
@@ -26,13 +34,13 @@ class LLMManager:
     
     def _initialize_llm(self):
         """Initialize LangChain ChatGroq instance."""
-        api_key = os.getenv("GROQ_API_KEY")
+        api_key = settings.groq_api_key
         if not api_key:
             raise ValueError("GROQ_API_KEY not found in environment variables")
         
         self._chat_llm = ChatGroq(
-            model="meta-llama/llama-4-maverick-17b-128e-instruct",
-            temperature=0.0,
+            model=settings.llm_model,
+            temperature=settings.llm_convo_temperature,
             groq_api_key=api_key
         )
     
@@ -43,11 +51,15 @@ class LLMManager:
             self._initialize_llm()
         return self._chat_llm
     
-    def get_chat_llm(self, temperature: float = 0.7) -> ChatGroq:
+    def get_chat_llm(self, temperature: Optional[float] = None) -> ChatGroq:
         """Get a chat LLM with custom temperature."""
-        api_key = os.getenv("GROQ_API_KEY")
+        api_key = settings.groq_api_key
+        if not api_key:
+            raise ValueError("GROQ_API_KEY not found in environment variables")
+        if temperature is None:
+            temperature = settings.llm_convo_temperature
         return ChatGroq(
-            model="meta-llama/llama-4-maverick-17b-128e-instruct",
+            model=settings.llm_model,
             temperature=temperature,
             groq_api_key=api_key
         )

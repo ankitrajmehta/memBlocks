@@ -5,6 +5,7 @@ from typing import List, Dict, Optional, Set
 from datetime import datetime
 from enum import Enum
 
+from config import settings
 from models.container import MemoryBlock
 from models.units import SemanticMemoryUnit, CoreMemoryUnit
 from llm.llm_manager import llm_manager
@@ -260,7 +261,7 @@ Generate an updated recursive summary that incorporates the new conversation."""
             chain = llm_manager.create_structured_chain(
                 system_prompt=SUMMARY_SYSTEM_PROMPT,
                 pydantic_model=SummaryOutput,
-                temperature=0.3,
+                temperature=settings.llm_recursive_summary_gen_temperature
             )
 
             result = await chain.ainvoke({"input": user_input})
@@ -408,7 +409,7 @@ Generate an updated recursive summary that incorporates the new conversation."""
 
         # Get response using LangChain
         try:
-            llm = llm_manager.get_chat_llm(temperature=0.7)
+            llm = llm_manager.get_chat_llm(temperature=settings.llm_convo_temperature)
             response = await llm.ainvoke(messages)
             assistant_response = response.content
         except Exception as e:
@@ -418,12 +419,10 @@ Generate an updated recursive summary that incorporates the new conversation."""
             )
 
         # Add assistant response to history
-        self.message_history.append(
-            {"role": "assistant", "content": assistant_response}
-        )
-        self.metrics["total_messages"] += 1
-
-        # Trigger background memory processing if threshold reached
+        self.message_history.append({"role": "assistant", "content": assistant_response})
+        
+        # TODO: Make background thread and run this in background, assistant_response should be returned immediately
+        # Process memory window if threshold reached
         if len(self.message_history) >= self.memory_window:
             print(f"\n🔄 Memory window threshold reached, triggering background processing...")
             self._trigger_memory_processing()

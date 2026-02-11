@@ -5,6 +5,7 @@ in one place and reused across modules.
 """
 
 # TODO: change prompt so it can produce multiple memories from the conversation instead of just one. Each memory should be minimal and focused on a single topic or fact.
+# TODO: add more examples to the prompt to help guide the model's output.
 PS1_SEMANTIC_PROMPT = """You are a memory extraction specialist. Your task is to analyze user interactions and extract structured information for long-term memory storage and retrieval.
 
 Your output will be used for:
@@ -72,7 +73,10 @@ Extract the following components:
 **Content to analyze:**
 """
 
-
+# TODO: add more examples to the prompt to help guide the model's output.
+# TODO: change prompt so it keeps old_core as far as possible and only updates it with new must have information from the conversation
+  # Should not act like recursive summary. If no new info, return old_core as it is. Dont not delete any information unless invalidated by new conversation.
+  # TODO: conflict management -> keep old memory as far as possible and only update it with new must have information from the conversation. Append also only if new information is added.
 CORE_MEMORY_PROMPT = """You are a core memory extractor. Your task is to update the core memory based on the conversation history.
 
 Core memory consists of two paragraphs (2-3 sentences each):
@@ -127,7 +131,7 @@ Output format (JSON only):
 
 """
 
-
+# TODO: take reference from https://github.com/mem0ai/mem0/blob/main/mem0/configs/prompts.py#L175 & L405 for conflict management prompt
 PS2_SEMANTIC_PROMPT = """
 You are an AI Memory Resolution and Evolution Agent.
 

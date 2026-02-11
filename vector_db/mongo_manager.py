@@ -1,12 +1,9 @@
 """MongoDB integration layer for memBlocks."""
 
-import os
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
-from dotenv import load_dotenv
-
-load_dotenv()
+from config import settings
 
 
 class MongoDBManager:
@@ -27,10 +24,10 @@ class MongoDBManager:
     
     def _initialize_client(self):
         """Initialize MongoDB async client."""
-        connection_string = os.getenv("MONGODB_CONNECTION_STRING")
+        connection_string = settings.mongodb_connection_string
         if not connection_string:
             raise ValueError("MONGODB_CONNECTION_STRING not found in environment variables")
-        
+
         self._client = AsyncIOMotorClient(connection_string)
         self._db = self._client.memblocks
         

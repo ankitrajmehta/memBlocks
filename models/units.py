@@ -69,7 +69,7 @@ class SemanticMemoryUnit(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "content": "User attended the AI conference in San Francisco and learned about the latest advancements in machine learning.",
                 "type": "event",
