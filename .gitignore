@@ -14,8 +14,6 @@ build/
 # IDE
 .vscode/
 .idea/
-.agent/
-.agents/
 .cursor/
 
 # Environment variables
