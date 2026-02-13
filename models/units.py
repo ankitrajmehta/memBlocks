@@ -29,7 +29,7 @@ class SemanticMemoryUnit(BaseModel):
         ...,
         description="The main content of the memory. Extracted from user input or documents in a concise form.",
     )
-    type: Literal["event", "factual", "opinion"] = Field(
+    type: Literal["event", "fact", "opinion"] = Field(
         ...,
         description="The type of memory: 'event' for time-specific events, 'factual' for general knowledge.",
     )
