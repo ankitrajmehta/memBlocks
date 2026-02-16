@@ -9,7 +9,7 @@ class SemanticExtractionOutput(BaseModel):
     
     keywords: List[str] = Field(description="Key terms and concepts from the content")
     content: str = Field(description="The actual memory content")
-    type: str = Field(description="Memory type: event_factual, opinion, or world_knowledge")
+    type: str = Field(description="Memory type")
     entities: List[str] = Field(description="Named entities (people, places, organizations)")
     confidence: float = Field(description="Confidence score between 0 and 1")
 
