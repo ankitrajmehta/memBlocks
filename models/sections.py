@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from vector_db.vector_db_manager import VectorDBManager
 from vector_db.mongo_manager import mongo_manager
 from llm.llm_manager import llm_manager
-from llm.output_models import SemanticExtractionOutput, CoreMemoryOutput
+from llm.output_models import SemanticMemoriesOutput, CoreMemoryOutput
 import asyncio
 from datetime import datetime
 import json
@@ -80,7 +80,7 @@ Extract structured semantic memories. Analyze each significant piece of informat
             # Create LangChain structured output chain
             chain = llm_manager.create_structured_chain(
                 system_prompt=ps1_prompt,
-                pydantic_model=SemanticExtractionOutput,
+                pydantic_model=SemanticMemoriesOutput,
                 temperature=settings.llm_semantic_extraction_temperature
             )
             
@@ -88,29 +88,33 @@ Extract structured semantic memories. Analyze each significant piece of informat
             result = await chain.ainvoke({"input": user_input})
             
             current_time = datetime.now().isoformat()
+            
+            extracted_memories = []
+            
+            for memory_item in result.memories:
+                # Build enriched embedding text (PS1 enhancement)
+                embedding_text = f"""{memory_item.content}
+Keywords: {', '.join(memory_item.keywords)}
+Entities: {', '.join(memory_item.entities)}""".strip()
 
-            # Build enriched embedding text (PS1 enhancement)
-            embedding_text = f"""{result.content}
-Keywords: {', '.join(result.keywords)}
-Entities: {', '.join(result.entities)}""".strip()
+                memory_unit = SemanticMemoryUnit(
+                    content=memory_item.content,
+                    type=memory_item.type,
+                    source="conversation",
+                    confidence=memory_item.confidence,
+                    memory_time=(
+                        current_time if memory_item.type == "event" else None
+                    ),
+                    entities=memory_item.entities,
+                    updated_at=current_time,
+                    meta_data=MemoryUnitMetaData(usage=[current_time]),
+                    keywords=memory_item.keywords,
+                    embedding_text=embedding_text,
+                )
+                
+                extracted_memories.append(memory_unit)
 
-            # TODO: Extend to multiple memories
-            memory_unit = SemanticMemoryUnit(
-                content=result.content,
-                type=result.type,
-                source="conversation",
-                confidence=result.confidence,
-                memory_time=(
-                    current_time if result.type == "event" else None
-                ),
-                entities=result.entities,
-                updated_at=current_time,
-                meta_data=MemoryUnitMetaData(usage=[current_time]),
-                keywords=result.keywords,
-                embedding_text=embedding_text,
-            )
-
-            return [memory_unit]
+            return extracted_memories
 
         except Exception as e:
             print(f"⚠️ Failed to extract semantic memories: {e}")

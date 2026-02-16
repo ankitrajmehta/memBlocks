@@ -4,16 +4,15 @@ This module collects all multi-line LLM prompts so they can be maintained
 in one place and reused across modules.
 """
 
-# TODO: change prompt so it can produce multiple memories from the conversation instead of just one. Each memory should be minimal and focused on a single topic or fact.
-# TODO: add more examples to the prompt to help guide the model's output.
 PS1_SEMANTIC_PROMPT = """
 You are a memory extraction specialist. Your task is to analyze a batch of user messages and extract structured semantic information for long-term memory storage and retrieval.
 
 Your input is a list of messages from a conversation. Each message may contain multiple distinct pieces of information. You must:
 
-- Create **one JSON object per semantic memory block**, where each block is minimal, focused on a single topic, fact, or event.
+- Extract **all** distinct semantic memory blocks from the conversation.
+- Create a JSON object with a single key `"memories"` containing a list of these memory blocks.
+- Each memory block must be minimal, focused on a single topic, fact, or event.
 - Memory blocks may combine information from multiple messages if the topic is the same, but each memory block must remain **self-contained**.
-- Handle batch inputs: the conversation may include 10-15 messages; your output can be any number of memory blocks (m), depending on content.
 
 ---
 
@@ -47,7 +46,8 @@ Your input is a list of messages from a conversation. Each message may contain m
 ### Critical Guidelines:
 
 - Output **ONLY valid JSON**, no extra text.  
-- Ensure **all fields are present** in every JSON object.  
+- The root object must be `{ "memories": [ ... ] }`.
+- Ensure **all fields are present** in every memory object.  
 - Keywords and entities should **not overlap with generic stopwords**.  
 - content must be a complete, grammatically correct sentence.  
 - Type must be **exactly one of**: fact, event, opinion.  
@@ -57,7 +57,7 @@ Your input is a list of messages from a conversation. Each message may contain m
 
 ---
 
-### Example:
+### Example 1: Standard Extraction
 
 **Input Messages (Batch of 3):**  
 1. "Yesterday, the ML team completed the first prototype of the recommendation engine."  
@@ -66,48 +66,88 @@ Your input is a list of messages from a conversation. Each message may contain m
 
 **Expected JSON Output:**  
 
-[
-  {
-    "keywords": ["ML team", "recommendation engine", "prototype", "completion", "yesterday"],
-    "content": "The ML team completed the first prototype of the recommendation engine yesterday.",
-    "type": "event",
-    "entities": ["ML team", "recommendation engine"],
-    "confidence": 0.95
-  },
-  {
-    "keywords": ["memory optimization", "deployment", "Sarah", "performance"],
-    "content": "Sarah emphasized the need to optimize memory usage before deployment.",
-    "type": "event",
-    "entities": ["Sarah", "memory optimization", "deployment"],
-    "confidence": 0.9
-  },
-  {
-    "keywords": ["PyTorch", "TensorFlow", "preference", "experimentation", "flexibility"],
-    "content": "User prefers using PyTorch over TensorFlow for experimentation due to its flexibility.",
-    "type": "opinion",
-    "entities": ["PyTorch", "TensorFlow"],
-    "confidence": 0.85
-  }
-]
+{
+  "memories": [
+    {
+      "keywords": ["ML team", "recommendation engine", "prototype", "completion", "yesterday"],
+      "content": "The ML team completed the first prototype of the recommendation engine yesterday.",
+      "type": "event",
+      "entities": ["ML team", "recommendation engine"],
+      "confidence": 0.95
+    },
+    {
+      "keywords": ["memory optimization", "deployment", "Sarah", "performance"],
+      "content": "Sarah emphasized the need to optimize memory usage before deployment.",
+      "type": "event",
+      "entities": ["Sarah", "memory optimization", "deployment"],
+      "confidence": 0.9
+    },
+    {
+      "keywords": ["PyTorch", "TensorFlow", "preference", "experimentation", "flexibility"],
+      "content": "User prefers using PyTorch over TensorFlow for experimentation due to its flexibility.",
+      "type": "opinion",
+      "entities": ["PyTorch", "TensorFlow"],
+      "confidence": 0.85
+    }
+  ]
+}
 
 ---
 
-**Another Example (Batch of 2, single topic spans messages):**  
+### Example 2: Distributed Information
 
 **Input Messages:**  
 1. "Project deadline is March 15."  
 2. "Make sure everyone updates their progress by March 15."
 
 **Expected JSON Output:**  
-[
-  {
-    "keywords": ["project deadline", "March 15", "progress update", "team"],
-    "content": "The project deadline is March 15 and all team members must update their progress by then.",
-    "type": "event",
-    "entities": ["project", "team"],
-    "confidence": 0.95
-  }
-]
+{
+  "memories": [
+    {
+      "keywords": ["project deadline", "March 15", "progress update", "team"],
+      "content": "The project deadline is March 15 and all team members must update their progress by then.",
+      "type": "event",
+      "entities": ["project", "team"],
+      "confidence": 0.95
+    }
+  ]
+}
+
+---
+
+### Example 3: Technical Constraints & Opinions
+
+**Input Messages:**
+1. "We can't use Docker for the production environment due to security policy #42."
+2. "I really hate how complex Kubernetes configuration is."
+3. "The database needs to handle 10k transactions per second."
+
+**Expected JSON Output:**
+{
+  "memories": [
+    {
+      "keywords": ["Docker", "production environment", "security policy", "limitations"],
+      "content": "Docker cannot be used in the production environment due to security policy #42.",
+      "type": "fact",
+      "entities": ["Docker", "production environment", "security policy #42"],
+      "confidence": 0.98
+    },
+    {
+      "keywords": ["Kubernetes", "configuration", "complexity", "dislike"],
+      "content": "User dislikes the complexity of Kubernetes configuration.",
+      "type": "opinion",
+      "entities": ["Kubernetes"],
+      "confidence": 0.9
+    },
+    {
+      "keywords": ["database", "throughput", "10k TPS", "requirement"],
+      "content": "The database required to handle 10,000 transactions per second.",
+      "type": "fact",
+      "entities": ["database"],
+      "confidence": 0.95
+    }
+  ]
+}
 
 ---
 
@@ -115,10 +155,6 @@ Your input is a list of messages from a conversation. Each message may contain m
 """
 
 
-# TODO: add more examples to the prompt to help guide the model's output.
-# TODO: change prompt so it keeps old_core as far as possible and only updates it with new must have information from the conversation
-  # Should not act like recursive summary. If no new info, return old_core as it is. Dont not delete any information unless invalidated by new conversation.
-  # TODO: conflict management -> keep old memory as far as possible and only update it with new must have information from the conversation. Append also only if new information is added.
 CORE_MEMORY_PROMPT = """
 You are a core memory extractor. Your task is to update the AI assistant's core memory based on the conversation history and existing core memory (`old_core`).
 
@@ -136,19 +172,13 @@ Core memory consists of two paragraphs (2–3 sentences each):
    - Self-identifying attributes
 
 IMPORTANT GUIDELINES:
-- Only extract **STABLE, ENDURING facts** from the conversation.  
-- **Do NOT include:**
-  * Temporary events or one-time occurrences  
-  * Specific projects or tasks (those go to semantic memory)  
-  * Opinions that may change over time  
-  * Detailed technical information  
-- Always start with `old_core` as the base.  
-- **Only update or append information** if the conversation provides new, must-have facts.  
-- **Never delete existing information** unless the conversation explicitly invalidates it.  
-- Integrate new facts into existing sentences if relevant, otherwise append as a new sentence.  
-- Keep paragraphs concise: 5–6 sentences max for HUMAN, 2–3 sentences max for PERSONA.  
-- If no new core memory-worthy information exists, return `old_core` unchanged.  
-- Avoid recursive summarization; do not attempt to “evolve” core memory over time.  
+- **PRESERVE EXISTING INFORMATION**: Always start with `old_core` as the absolute base.
+- **MINIMAL UPDATES**: Only update `old_core` if the conversation contains **new, explicit, and stable** facts.
+- **NO DELETIONS**: Never delete existing facts unless the user explicitly corrects them (e.g., "I moved to Berlin" -> update location).
+- **IGNORE TEMPORARY INFO**: Do not include daily tasks, specific project details (semantic memory), or fleeting moods.
+- **CONFLICT RESOLUTION**: If a new fact conflicts with an old one (e.g., location change), update the specific fact but keep all other surrounding details.
+- **CONCISENESS**: Keep paragraphs dense and information-rich. Limit HUMAN to 5–6 sentences and PERSONA to 2–3 sentences.
+- **NO RECURSIVE SUMMARIZATION**: Do not just summarize the conversation. Extract *attributes* and *facts*.
 
 ---
 
@@ -174,7 +204,7 @@ Updated Core Memory Output:
 
 ---
 
-**Example 2: No new facts**
+**Example 2: No new facts (NOOP)**
 
 Old Core Memory:
 {
@@ -190,6 +220,27 @@ Updated Core Memory Output (unchanged):
 {
   "persona_content": "The AI communicates in a friendly and casual style, prioritizing empathy and engagement.",
   "human_content": "User is named Alex, lives in New York, and works as a software engineer. Alex enjoys photography and jazz music."
+}
+
+---
+
+**Example 3: Conflict Resolution & Refinement**
+
+Old Core Memory:
+{
+  "persona_content": "The AI is helpful and enthusiastic.",
+  "human_content": "User is John, a Python developer who uses VS Code. He is a beginner in AI."
+}
+
+Conversation:
+1. "I've mostly switched to Rust now for my new backend projects."
+2. "I'm still using Python for data scripts though."
+3. "Stop being so enthusiastic, just give me the code."
+
+Updated Core Memory Output:
+{
+  "persona_content": "The AI is helpful and direct, avoiding excessive enthusiasm. It focuses on providing code solutions efficiently.",
+  "human_content": "User is John, a developer who uses VS Code. He primarily uses Rust for backend projects but continues to use Python for data scripts. He is a beginner in AI."
 }
 
 Output format:
@@ -220,7 +271,7 @@ Output format (JSON only):
 
 """
 
-# TODO: take reference from https://github.com/mem0ai/mem0/blob/main/mem0/configs/prompts.py#L175 & L405 for conflict management prompt
+
 PS2_SEMANTIC_PROMPT = """
 You are an AI Memory Resolution and Deduplication Agent.
 

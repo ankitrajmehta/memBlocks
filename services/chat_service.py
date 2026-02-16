@@ -11,7 +11,7 @@ from models.units import SemanticMemoryUnit, CoreMemoryUnit
 from llm.llm_manager import llm_manager
 from llm.output_models import SummaryOutput
 from prompts import SUMMARY_SYSTEM_PROMPT, ASSISTANT_BASE_PROMPT
-
+import uuid
 
 class TaskStatus(Enum):
     """Background task status."""
@@ -249,12 +249,12 @@ class ChatService:
         )
 
         user_input = f"""Previous Summary:
-{self.recursive_summary if self.recursive_summary else "None"}
+        {self.recursive_summary if self.recursive_summary else "None"}
 
-Recent Conversation:
-{conversation_text}
+        Recent Conversation:
+        {conversation_text}
 
-Generate an updated recursive summary that incorporates the new conversation."""
+        Generate an updated recursive summary that incorporates the new conversation."""
 
         try:
             # Create chain
@@ -277,7 +277,7 @@ Generate an updated recursive summary that incorporates the new conversation."""
         
         Creates a background task and registers it with the tracker.
         """
-        task_id = f"mem_proc_{datetime.now().timestamp()}"
+        task_id = f"mem_proc_{uuid.uuid4()}"
         
         # Create wrapper that includes task tracking
         async def process_with_tracking():
@@ -421,7 +421,6 @@ Generate an updated recursive summary that incorporates the new conversation."""
         # Add assistant response to history
         self.message_history.append({"role": "assistant", "content": assistant_response})
         
-        # TODO: Make background thread and run this in background, assistant_response should be returned immediately
         # Process memory window if threshold reached
         if len(self.message_history) >= self.memory_window:
             print(f"\n🔄 Memory window threshold reached, triggering background processing...")

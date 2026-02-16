@@ -5,13 +5,19 @@ from typing import List, Optional
 
 
 class SemanticExtractionOutput(BaseModel):
-    """Output model for semantic memory extraction."""
+    """Output model for single semantic memory extraction."""
     
     keywords: List[str] = Field(description="Key terms and concepts from the content")
     content: str = Field(description="The actual memory content")
     type: str = Field(description="Memory type")
     entities: List[str] = Field(description="Named entities (people, places, organizations)")
     confidence: float = Field(description="Confidence score between 0 and 1")
+
+
+class SemanticMemoriesOutput(BaseModel):
+    """Output model for list of semantic memories."""
+    
+    memories: List[SemanticExtractionOutput] = Field(description="List of extracted semantic memories")
 
 
 class CoreMemoryOutput(BaseModel):
