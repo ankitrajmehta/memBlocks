@@ -1,7 +1,7 @@
 """Pydantic models for structured LLM outputs."""
 
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Literal, Dict
 
 
 class SemanticExtractionOutput(BaseModel):
@@ -36,4 +36,41 @@ class SummaryOutput(BaseModel):
     
     summary: str = Field(
         description="Concise summary of the conversation incorporating previous context"
+    )
+
+
+class PS2NewMemoryOperation(BaseModel):
+    """Operation to perform on a new memory being added."""
+
+    operation: Literal["ADD", "NONE"] = Field(
+        description="Whether to ADD the new memory or do NOTHING"
+    )
+    reason: Optional[str] = Field(
+        default=None, description="Explanation for the decision"
+    )
+
+
+class PS2ExistingMemoryOperation(BaseModel):
+    """Operation to perform on an existing memory in the database."""
+
+    id: str = Field(description="Qdrant point ID of the existing memory")
+    operation: Literal["UPDATE", "DELETE", "NONE"] = Field(
+        description="Operation to perform on the existing memory"
+    )
+    updated_memory: Optional[Dict] = Field(
+        default=None, description="Complete updated memory dict for UPDATE operation"
+    )
+    reason: Optional[str] = Field(
+        default=None, description="Explanation for the decision"
+    )
+
+
+class PS2MemoryUpdateOutput(BaseModel):
+    """Output model for PS2 memory conflict resolution."""
+
+    new_memory_operation: PS2NewMemoryOperation = Field(
+        description="Decision for the new memory being processed"
+    )
+    existing_memory_operations: List[PS2ExistingMemoryOperation] = Field(
+        default_factory=list, description="Operations to perform on existing memories"
     )

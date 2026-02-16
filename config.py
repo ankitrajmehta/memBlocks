@@ -3,6 +3,7 @@
 This centralizes environment configuration so modules import `settings` instead
 of calling `os.getenv` or `load_dotenv` directly.
 """
+
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,8 +18,12 @@ class Settings(BaseSettings):
     """
 
     groq_api_key: Optional[str] = Field(None, env="GROQ_API_KEY")
-    mongodb_connection_string: Optional[str] = Field(None, env="MONGODB_CONNECTION_STRING")
-    ollama_base_url: Optional[str] = Field("http://localhost:11434", env="OLLAMA_BASE_URL")
+    mongodb_connection_string: Optional[str] = Field(
+        None, env="MONGODB_CONNECTION_STRING"
+    )
+    ollama_base_url: Optional[str] = Field(
+        "http://localhost:11434", env="OLLAMA_BASE_URL"
+    )
     embeddings_model: Optional[str] = Field("nomic-embed-text", env="EMBEDDINGS_MODEL")
     # Qdrant defaults (used by demonstration scripts). These can be overridden
     # via env variables QDRANT_HOST, QDRANT_PORT, QDRANT_PREFER_GRPC.
@@ -32,9 +37,19 @@ class Settings(BaseSettings):
         env="LLM_MODEL",
     )
     llm_convo_temperature: float = Field(0.7, env="LLM_CONVO_TEMPERATURE")
-    llm_semantic_extraction_temperature: float = Field(0.0, env="LLM_SEMANTIC_EXTRACTION_TEMPERATURE")
-    llm_core_extraction_temperature: float = Field(0.0, env="LLM_CORE_EXTRACTION_TEMPERATURE")
-    llm_recursive_summary_gen_temperature: float = Field(0.3, env="LLM_RECURSIVE_SUMMARY_GEN_TEMPERATURE")
+    llm_semantic_extraction_temperature: float = Field(
+        0.0, env="LLM_SEMANTIC_EXTRACTION_TEMPERATURE"
+    )
+    llm_core_extraction_temperature: float = Field(
+        0.0, env="LLM_CORE_EXTRACTION_TEMPERATURE"
+    )
+    llm_recursive_summary_gen_temperature: float = Field(
+        0.3, env="LLM_RECURSIVE_SUMMARY_GEN_TEMPERATURE"
+    )
+    llm_memory_update_temperature: float = Field(
+        default=0.0,  # Very low for deterministic conflict resolution
+        env="LLM_MEMORY_UPDATE_TEMPERATURE",
+    )
 
     # Arize (for monitoring)
     arize_space_id: str = Field(..., env="ARIZE_SPACE_ID")

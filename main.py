@@ -74,6 +74,11 @@ class MemBlocksCLI:
         print("7. 🚪 Exit")
         print("="*70)
     
+    async def ainput(self, prompt: str = "") -> str:
+        """Non-blocking input using asyncio.to_thread. 
+            #TODO make needed processes BG thread, and remove this function"""
+        return await asyncio.to_thread(input, prompt)
+
     async def select_create_user(self):
         """Select or create a user."""
         print("\n" + "─"*70)
@@ -87,7 +92,7 @@ class MemBlocksCLI:
             for i, user in enumerate(users, 1):
                 print(f"  {i}. {user['user_id']}")
         
-        choice = input("\nEnter user ID (or press Enter for current): ").strip()
+        choice = (await self.ainput("\nEnter user ID (or press Enter for current): ")).strip()
         
         if not choice:
             print(f"✅ Keeping current user: {self.current_user_id}")
@@ -108,12 +113,12 @@ class MemBlocksCLI:
         print("📦 CREATE MEMORY BLOCK")
         print("─"*70)
         
-        name = input("Block name: ").strip()
+        name = (await self.ainput("Block name: ")).strip()
         if not name:
             print("⚠️ Block name is required!")
             return
         
-        description = input("Block description: ").strip()
+        description = (await self.ainput("Block description: ")).strip()
         if not description:
             description = f"Memory block for {name}"
         
@@ -183,7 +188,7 @@ class MemBlocksCLI:
         for i, block in enumerate(blocks, 1):
             print(f"  {i}. {block.name} ({block.meta_data.id})")
         
-        choice = input("\nSelect block number: ").strip()
+        choice = (await self.ainput("\nSelect block number: ")).strip()
         
         try:
             block_idx = int(choice) - 1
@@ -225,7 +230,7 @@ class MemBlocksCLI:
         print("─"*70)
         
         while True:
-            user_input = input("\n🙋 You: ").strip()
+            user_input = (await self.ainput("\n🙋 You: ")).strip()
             
             if not user_input:
                 continue
@@ -260,7 +265,7 @@ class MemBlocksCLI:
             self.display_status()
             self.display_menu()
             
-            choice = input("Select option: ").strip()
+            choice = (await self.ainput("Select option: ")).strip()
             
             try:
                 if choice == '1':
