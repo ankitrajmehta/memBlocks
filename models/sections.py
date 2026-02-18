@@ -12,10 +12,13 @@ from concurrent.futures import ThreadPoolExecutor
 from vector_db.vector_db_manager import VectorDBManager
 from vector_db.mongo_manager import mongo_manager
 from llm.llm_manager import llm_manager
-from llm.output_models import SemanticExtractionOutput, CoreMemoryOutput
+from llm.output_models import SemanticMemoriesOutput, CoreMemoryOutput
 import asyncio
 from datetime import datetime
 import json
+from qdrant_client.models import ScoredPoint
+from prompts import PS2_MEMORY_UPDATE_PROMPT
+from llm.output_models import PS2MemoryUpdateOutput
 
 
 class SemanticMemorySection(BaseModel):
@@ -80,37 +83,39 @@ Extract structured semantic memories. Analyze each significant piece of informat
             # Create LangChain structured output chain
             chain = llm_manager.create_structured_chain(
                 system_prompt=ps1_prompt,
-                pydantic_model=SemanticExtractionOutput,
-                temperature=settings.llm_semantic_extraction_temperature
+                pydantic_model=SemanticMemoriesOutput,
+                temperature=settings.llm_semantic_extraction_temperature,
             )
-            
+
             # Execute chain
             result = await chain.ainvoke({"input": user_input})
-            
+
             current_time = datetime.now().isoformat()
 
-            # Build enriched embedding text (PS1 enhancement)
-            embedding_text = f"""{result.content}
-Keywords: {', '.join(result.keywords)}
-Entities: {', '.join(result.entities)}""".strip()
+            extracted_memories = []
 
-            # TODO: Extend to multiple memories
-            memory_unit = SemanticMemoryUnit(
-                content=result.content,
-                type=result.type,
-                source="conversation",
-                confidence=result.confidence,
-                memory_time=(
-                    current_time if result.type == "event" else None
-                ),
-                entities=result.entities,
-                updated_at=current_time,
-                meta_data=MemoryUnitMetaData(usage=[current_time]),
-                keywords=result.keywords,
-                embedding_text=embedding_text,
-            )
+            for memory_item in result.memories:
+                # Build enriched embedding text (PS1 enhancement)
+                embedding_text = f"""{memory_item.content}
+Keywords: {", ".join(memory_item.keywords)}
+Entities: {", ".join(memory_item.entities)}""".strip()
 
-            return [memory_unit]
+                memory_unit = SemanticMemoryUnit(
+                    content=memory_item.content,
+                    type=memory_item.type,
+                    source="conversation",
+                    confidence=memory_item.confidence,
+                    memory_time=(current_time if memory_item.type == "event" else None),
+                    entities=memory_item.entities,
+                    updated_at=current_time,
+                    meta_data=MemoryUnitMetaData(usage=[current_time]),
+                    keywords=memory_item.keywords,
+                    embedding_text=embedding_text,
+                )
+
+                extracted_memories.append(memory_unit)
+
+            return extracted_memories
 
         except Exception as e:
             print(f"⚠️ Failed to extract semantic memories: {e}")
@@ -146,7 +151,7 @@ Entities: {', '.join(result.entities)}""".strip()
 
         # Store all filtered memories
         for memory in memories:
-            self.store_memory(memory)
+            await self.store_memory(memory)
 
         return memories
 
@@ -154,31 +159,165 @@ Entities: {', '.join(result.entities)}""".strip()
     # STORAGE - Uses enriched embedding_text
     # ========================================================================
 
-    def store_memory(self, memory_unit: SemanticMemoryUnit) -> bool:
-        """Store a SemanticMemoryUnit in the corresponding collection.
+    async def store_memory(self, memory_unit: SemanticMemoryUnit) -> bool:
+        """Store a memory with conflict resolution (PS2).
 
-        PS1 Enhancement: Uses enriched embedding_text if available for better retrieval.
+        PS2 Enhancement:
+        1. Retrieve semantically similar existing memories
+        2. Use LLM to decide ADD/UPDATE/DELETE operations
+        3. Execute operations atomically
 
         Args:
-            memory_unit (SemanticMemoryUnit): The memory unit to store.
+            memory_unit: The new memory unit to store
+
         Returns:
-            bool: True if storage was successful, False otherwise.
+            bool: True if operations completed successfully
         """
-        # TODO: Retrieve semantically similar existing memories (top-k)
-        # TODO: Use PS2 to figure out to ADD or update existing memory
 
         embedder = VectorDBManager.get_embedder()
+        current_time = datetime.now().isoformat()
 
-        # PS1: Use enriched embedding_text if available, otherwise fall back to content
+        # Step 1: Embed the new memory for similarity search
         text_to_embed = (
             memory_unit.embedding_text
             if memory_unit.embedding_text
             else memory_unit.content
         )
+        new_memory_vector = embedder.embed_text(text_to_embed)
 
-        vector = embedder.embed_text(text_to_embed)
-        payload = memory_unit.model_dump()
-        return VectorDBManager.store_vector(self.collection_name, vector, payload)
+        # Step 2: Retrieve top-k similar existing memories
+        similar_results = VectorDBManager.retrieve_from_vector(
+            self.collection_name, new_memory_vector, top_k=5
+        )
+
+        # Step 3: Format inputs for PS2 prompt
+        new_memory_dict = memory_unit.model_dump()
+        new_memory_dict["updated_at"] = current_time
+
+        # Build existing memories list and create ID mapping (int -> real Qdrant ID)
+        # This prevents LLM hallucination with long UUIDs
+        existing_memories_list = []
+        id_mapping = {}  # Maps simple int ID to real Qdrant point ID
+
+        for idx, point in enumerate(similar_results):
+            if isinstance(point, ScoredPoint):
+                # Use simple integer ID for LLM
+                simple_id = str(idx)
+                # Map back to real Qdrant ID
+                id_mapping[simple_id] = point.id
+
+                # Ensure simple ID takes priority over any 'id' in payload
+                existing_mem = {**point.payload, "id": simple_id}
+                existing_memories_list.append(existing_mem)
+
+        # If no similar memories exist, just ADD directly
+        if not existing_memories_list:
+            payload = memory_unit.model_dump()
+            success = VectorDBManager.store_vector(
+                self.collection_name, new_memory_vector, payload
+            )
+            if success:
+                print(
+                    f"✓ Added new memory (no similar existing): {memory_unit.content[:60]}..."
+                )
+            return success
+
+        # Step 4: Call PS2 LLM for conflict resolution
+        try:
+            # Create structured chain
+            chain = llm_manager.create_structured_chain(
+                system_prompt=PS2_MEMORY_UPDATE_PROMPT,
+                pydantic_model=PS2MemoryUpdateOutput,
+                temperature=settings.llm_memory_update_temperature,
+            )
+
+            user_input = f"""
+                NEW MEMORY:
+                {json.dumps(new_memory_dict, indent=2, default=str)}
+
+                EXISTING MEMORIES:
+                {json.dumps(existing_memories_list, indent=2, default=str)}
+                """
+
+            result = await chain.ainvoke({"input": user_input})
+
+        except Exception as e:
+            print(f"⚠️ PS2 conflict resolution failed: {e}")
+            # Fallback: Just ADD the memory without conflict resolution
+            print(f"   Fallback: Adding memory without conflict check")
+            payload = memory_unit.model_dump()
+            return VectorDBManager.store_vector(
+                self.collection_name, new_memory_vector, payload
+            )
+
+        # Step 5: Execute operations based on LLM decisions
+        operations_performed = []
+
+        # 5a. Handle new memory operation
+        if result.new_memory_operation.operation == "ADD":
+            payload = memory_unit.model_dump()
+            success = VectorDBManager.store_vector(
+                self.collection_name, new_memory_vector, payload
+            )
+            if success:
+                operations_performed.append("ADD new memory")
+                print(f"✓ Added new memory: {memory_unit.content[:60]}...")
+        else:
+            operations_performed.append(
+                f"NONE (new): {result.new_memory_operation.reason or 'Redundant'}"
+            )
+            print(f" Skipped new memory (redundant)")
+
+        # 5b. Handle existing memory operations
+        for op in result.existing_memory_operations:
+            # Map simple ID back to real Qdrant point ID
+            real_id = id_mapping.get(op.id)
+            if not real_id:
+                print(f" Warning: Could not map ID {op.id} to real Qdrant ID, skipping")
+                continue
+
+            if op.operation == "UPDATE":
+                # Update the ID in the updated_memory dict to real Qdrant ID
+                op.updated_memory["id"] = real_id
+
+                # Re-embed the updated memory content
+                updated_unit = SemanticMemoryUnit(**op.updated_memory)
+                updated_text = (
+                    updated_unit.embedding_text
+                    if updated_unit.embedding_text
+                    else updated_unit.content
+                )
+                updated_vector = embedder.embed_text(updated_text)
+
+                # Remove 'id' from payload since Qdrant stores it separately
+                payload_without_id = {
+                    k: v for k, v in op.updated_memory.items() if k != "id"
+                }
+
+                # Upsert with real Qdrant ID
+                success = VectorDBManager.store_vector(
+                    self.collection_name,
+                    updated_vector,
+                    payload_without_id,
+                    point_id=real_id,
+                )
+                if success:
+                    operations_performed.append(f"UPDATE {real_id[:8]}...")
+                    print(
+                        f"Updated memory {real_id[:8]}...: {updated_unit.content[:60]}..."
+                    )
+
+            elif op.operation == "DELETE":
+                success = VectorDBManager.delete_vector(self.collection_name, real_id)
+                if success:
+                    operations_performed.append(f"DELETE {real_id[:8]}...")
+                    print(f"Deleted memory {real_id[:8]}...")
+
+            else:  # NONE
+                operations_performed.append(f"NONE {real_id[:8]}...")
+
+        print(f"   Operations: {', '.join(operations_performed)}")
+        return True
 
     # ========================================================================
     # RETRIEVAL
@@ -253,7 +392,9 @@ class CoreMemorySection(BaseModel):
     type: Literal["core"] = Field(
         default="core", description="Type of the memory section."
     )
-    block_id: str = Field(..., description="ID of the memory block this core memory belongs to")
+    block_id: str = Field(
+        ..., description="ID of the memory block this core memory belongs to"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -262,35 +403,35 @@ class CoreMemorySection(BaseModel):
         if isinstance(value, str):
             return {"block_id": value}
         return value
-    
+
     async def create_new_core_memory(
-        self, 
+        self,
         messages: List[Dict[str, str]],
         old_core_memory: Optional[CoreMemoryUnit] = None,
-        core_creation_prompt: str = CORE_MEMORY_PROMPT
+        core_creation_prompt: str = CORE_MEMORY_PROMPT,
     ) -> CoreMemoryUnit:
         """
         Create updated CoreMemoryUnit from conversation messages and old core memory.
-        
+
         Uses LangChain to generate replacement persona and human paragraphs.
-        
+
         Args:
             messages: Recent conversation messages
             old_core_memory: Previous core memory (if any)
             core_creation_prompt: System prompt for core memory extraction
-            
+
         Returns:
             New CoreMemoryUnit with updated persona and human content
         """
         # Format conversation
         conversation_text = "\n".join(
-            [f"{msg['role'].upper()}: {msg['content']}" for msg in messages]
+            [f"{msg['role'].upper()}: {msg['content']}\n" for msg in messages]
         )
-        
+
         # Format old core memory
         old_persona = old_core_memory.persona_content if old_core_memory else ""
         old_human = old_core_memory.human_content if old_core_memory else ""
-        
+
         user_input = f"""Current Core Memory:
 PERSONA: {old_persona}
 HUMAN: {old_human}
@@ -305,15 +446,15 @@ Generate updated core memory paragraphs that incorporate new stable facts."""
             chain = llm_manager.create_structured_chain(
                 system_prompt=core_creation_prompt,
                 pydantic_model=CoreMemoryOutput,
-                temperature=settings.llm_core_extraction_temperature
+                temperature=settings.llm_core_extraction_temperature,
             )
-            
+
             # Execute chain
             result = await chain.ainvoke({"input": user_input})
-            
+
             return CoreMemoryUnit(
                 persona_content=result.persona_content,
-                human_content=result.human_content
+                human_content=result.human_content,
             )
 
         except Exception as e:
@@ -329,7 +470,7 @@ Generate updated core memory paragraphs that incorporate new stable facts."""
 
         Args:
             memory_unit: The core memory unit to store
-            
+
         Returns:
             bool: True if storage was successful
         """
@@ -337,7 +478,7 @@ Generate updated core memory paragraphs that incorporate new stable facts."""
             await mongo_manager.save_core_memory(
                 block_id=self.block_id,
                 persona_content=memory_unit.persona_content,
-                human_content=memory_unit.human_content
+                human_content=memory_unit.human_content,
             )
             return True
         except Exception as e:
@@ -358,13 +499,12 @@ Generate updated core memory paragraphs that incorporate new stable facts."""
             if doc:
                 return CoreMemoryUnit(
                     persona_content=doc.get("persona_content", ""),
-                    human_content=doc.get("human_content", "")
+                    human_content=doc.get("human_content", ""),
                 )
             return None
         except Exception as e:
             print(f"⚠️ Failed to retrieve core memory: {e}")
             return None
-
 
 
 class ResourceMemorySection(BaseModel):

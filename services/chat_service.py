@@ -11,10 +11,12 @@ from models.units import SemanticMemoryUnit, CoreMemoryUnit
 from llm.llm_manager import llm_manager
 from llm.output_models import SummaryOutput
 from prompts import SUMMARY_SYSTEM_PROMPT, ASSISTANT_BASE_PROMPT
+import uuid
 
 
 class TaskStatus(Enum):
     """Background task status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -23,13 +25,13 @@ class TaskStatus(Enum):
 
 class BackgroundTaskTracker:
     """Track background memory processing tasks."""
-    
+
     def __init__(self):
         self.tasks: Dict[str, asyncio.Task] = {}
         self.status: Dict[str, TaskStatus] = {}
         self.results: Dict[str, Dict] = {}
         self._lock = asyncio.Lock()
-    
+
     def add_task(self, task_id: str, task: asyncio.Task):
         """Register a new background task (synchronous)."""
         self.tasks[task_id] = task
@@ -37,66 +39,72 @@ class BackgroundTaskTracker:
         self.results[task_id] = {
             "started_at": datetime.now(),
             "completed_at": None,
-            "error": None
+            "error": None,
         }
-    
+
     async def mark_completed(self, task_id: str, error: Optional[Exception] = None):
         """Mark task as completed or failed."""
         async with self._lock:
             # Safety check - task might not be registered yet due to race condition
             if task_id not in self.status:
-                print(f"⚠️ Warning: Attempting to mark unknown task as completed: {task_id}")
+                print(
+                    f"⚠️ Warning: Attempting to mark unknown task as completed: {task_id}"
+                )
                 return
-                
+
             if error:
                 self.status[task_id] = TaskStatus.FAILED
                 self.results[task_id]["error"] = str(error)
             else:
                 self.status[task_id] = TaskStatus.COMPLETED
             self.results[task_id]["completed_at"] = datetime.now()
-    
+
     async def cleanup_completed(self, max_age_seconds: int = 300):
         """Remove completed tasks older than max_age_seconds."""
         async with self._lock:
             now = datetime.now()
             to_remove = []
-            
+
             for task_id, result in self.results.items():
                 if result["completed_at"]:
                     age = (now - result["completed_at"]).total_seconds()
                     if age > max_age_seconds:
                         to_remove.append(task_id)
-            
+
             for task_id in to_remove:
                 self.tasks.pop(task_id, None)
                 self.status.pop(task_id, None)
                 self.results.pop(task_id, None)
-    
+
     async def get_status(self) -> Dict:
         """Get current status of all tasks."""
         async with self._lock:
             return {
                 "total_tasks": len(self.tasks),
-                "running": sum(1 for s in self.status.values() if s == TaskStatus.RUNNING),
-                "completed": sum(1 for s in self.status.values() if s == TaskStatus.COMPLETED),
-                "failed": sum(1 for s in self.status.values() if s == TaskStatus.FAILED),
+                "running": sum(
+                    1 for s in self.status.values() if s == TaskStatus.RUNNING
+                ),
+                "completed": sum(
+                    1 for s in self.status.values() if s == TaskStatus.COMPLETED
+                ),
+                "failed": sum(
+                    1 for s in self.status.values() if s == TaskStatus.FAILED
+                ),
                 "tasks": {
-                    task_id: {
-                        "status": status.value,
-                        **self.results[task_id]
-                    }
+                    task_id: {"status": status.value, **self.results[task_id]}
                     for task_id, status in self.status.items()
-                }
+                },
             }
-    
+
     async def wait_all(self, timeout: Optional[float] = None):
         """Wait for all tasks to complete."""
         async with self._lock:
             running_tasks = [
-                task for task_id, task in self.tasks.items()
+                task
+                for task_id, task in self.tasks.items()
                 if self.status[task_id] == TaskStatus.RUNNING
             ]
-        
+
         if running_tasks:
             try:
                 await asyncio.wait(running_tasks, timeout=timeout)
@@ -117,11 +125,11 @@ class ChatService:
     """
 
     def __init__(
-        self, 
-        memory_block: MemoryBlock, 
-        memory_window: int = 10, 
+        self,
+        memory_block: MemoryBlock,
+        memory_window: int = 10,
         keep_last_n: int = 4,
-        max_concurrent_processing: int = 1
+        max_concurrent_processing: int = 1,
     ):
         """
         Initialize chat service.
@@ -140,17 +148,19 @@ class ChatService:
         # Session state
         self.message_history: List[Dict[str, str]] = []
         self.recursive_summary: str = ""
-        
+
         # Background task management
         self.task_tracker = BackgroundTaskTracker()
         self._processing_semaphore = asyncio.Semaphore(max_concurrent_processing)
-        self._processing_lock = asyncio.Lock()  # Prevent race conditions on memory window
-        
+        self._processing_lock = (
+            asyncio.Lock()
+        )  # Prevent race conditions on memory window
+
         # Metrics
         self.metrics = {
             "total_messages": 0,
             "memory_windows_processed": 0,
-            "last_processing_time": None
+            "last_processing_time": None,
         }
 
     # ========================================================================
@@ -160,28 +170,26 @@ class ChatService:
     async def _process_memory_window(self, task_id: str):
         """
         Process memory window: extract semantic + core memories, generate summary, flush history.
-        
+
         Args:
             task_id: Unique identifier for this processing task
-        
+
         This runs in the background without blocking the chat response.
         """
         async with self._processing_semaphore:
             async with self._processing_lock:
                 # Snapshot current history before processing
                 messages_to_process = self.message_history.copy()
-            
+
             if not messages_to_process:
                 return
-            
-            print(f"\n{'='*70}")
-            print(f"🔄 MEMORY PROCESSING PIPELINE (Task: {task_id})")
-            print(f"{'='*70}")
-            print(f"Processing {len(messages_to_process)} messages...")
+
+            print(f"🔄 MEMORY PIPELINE START (Task: {task_id[:12]}...)")
+            print(f"   Processing {len(messages_to_process)} messages...")
 
             # STEP 1: Extract semantic memories
             if self.memory_block.semantic_memories:
-                print(f"\n📝 STEP 1: Semantic Memory Extraction")
+                print(f"   → STEP 1: Semantic Extraction...")
                 semantic_memories = (
                     await self.memory_block.semantic_memories.extract_semantic_memories(
                         messages=messages_to_process
@@ -191,12 +199,12 @@ class ChatService:
 
                 # Store memories
                 for mem in semantic_memories:
-                    self.memory_block.semantic_memories.store_memory(mem)
+                    await self.memory_block.semantic_memories.store_memory(mem)
                 print(f"   ✓ Stored {len(semantic_memories)} memories")
 
             # STEP 2: Extract and update core memory
             if self.memory_block.core_memories:
-                print(f"\n🧠 STEP 2: Core Memory Extraction")
+                print(f"   → STEP 2: Core Memory Update...")
                 old_core = await self.memory_block.core_memories.get_memories()
 
                 new_core = await self.memory_block.core_memories.create_new_core_memory(
@@ -206,33 +214,27 @@ class ChatService:
                 # Store updated core memory
                 await self.memory_block.core_memories.store_memory(new_core)
                 print(f"   ✓ Updated core memory")
-                if new_core.persona_content:
-                    print(f"     Persona: {new_core.persona_content[:60]}...")
-                if new_core.human_content:
-                    print(f"     Human: {new_core.human_content[:60]}...")
 
             # STEP 3: Generate recursive summary
-            print(f"\n📊 STEP 3: Recursive Summary")
+            print(f"   → STEP 3: Recursive Summary...")
             new_summary = await self._generate_recursive_summary(messages_to_process)
-            
+
             async with self._processing_lock:
                 self.recursive_summary = new_summary
-            print(f"   ✓ Summary updated ({len(new_summary)} chars)")
+            print(f"   ✓ Summary updated")
 
             # STEP 4: Flush history
-            print(f"\n🗑️  STEP 4: Flushing Message History")
+            print(f"   → STEP 4: Flushing History...")
             async with self._processing_lock:
-                print(f"   Before: {len(self.message_history)} messages")
-                self.message_history = self.message_history[-self.keep_last_n:]
-                print(f"   After: {len(self.message_history)} messages (kept last {self.keep_last_n})")
+                old_len = len(self.message_history)
+                self.message_history = self.message_history[-self.keep_last_n :]
+                print(f"   ✓ Flushed history ({old_len} → {len(self.message_history)})")
 
             # Update metrics
             self.metrics["memory_windows_processed"] += 1
             self.metrics["last_processing_time"] = datetime.now()
 
-            print(f"\n{'='*70}")
-            print(f"✅ PIPELINE COMPLETE (Task: {task_id})")
-            print(f"{'='*70}\n")
+            print(f"✅ MEMORY PIPELINE COMPLETE (Task: {task_id[:12]}...)")
 
     async def _generate_recursive_summary(self, messages: List[Dict[str, str]]) -> str:
         """
@@ -245,23 +247,23 @@ class ChatService:
             Updated summary
         """
         conversation_text = "\n".join(
-            [f"{msg['role'].upper()}: {msg['content']}" for msg in messages]
+            [f"{msg['role'].upper()}: {msg['content']}\n" for msg in messages]
         )
 
         user_input = f"""Previous Summary:
-{self.recursive_summary if self.recursive_summary else "None"}
+        {self.recursive_summary if self.recursive_summary else "None"}
 
-Recent Conversation:
-{conversation_text}
+        Recent Conversation:
+        {conversation_text}
 
-Generate an updated recursive summary that incorporates the new conversation."""
+        Generate an updated recursive summary that incorporates the new conversation."""
 
         try:
             # Create chain
             chain = llm_manager.create_structured_chain(
                 system_prompt=SUMMARY_SYSTEM_PROMPT,
                 pydantic_model=SummaryOutput,
-                temperature=settings.llm_recursive_summary_gen_temperature
+                temperature=settings.llm_recursive_summary_gen_temperature,
             )
 
             result = await chain.ainvoke({"input": user_input})
@@ -274,11 +276,11 @@ Generate an updated recursive summary that incorporates the new conversation."""
     def _trigger_memory_processing(self):
         """
         Trigger background memory processing without blocking.
-        
+
         Creates a background task and registers it with the tracker.
         """
-        task_id = f"mem_proc_{datetime.now().timestamp()}"
-        
+        task_id = f"mem_proc_{uuid.uuid4()}"
+
         # Create wrapper that includes task tracking
         async def process_with_tracking():
             try:
@@ -287,18 +289,18 @@ Generate an updated recursive summary that incorporates the new conversation."""
             except Exception as e:
                 print(f"❌ Memory processing failed (Task: {task_id}): {e}")
                 await self.task_tracker.mark_completed(task_id, error=e)
-        
+
         # Create and register the task BEFORE starting it
         task = asyncio.create_task(process_with_tracking())
         self.task_tracker.add_task(task_id, task)
-        
+
         # Add error handler for logging
         def on_done(t):
             if not t.cancelled() and t.exception():
                 print(f"⚠️ Background memory processing uncaught error: {t.exception()}")
-        
+
         task.add_done_callback(on_done)
-        
+
         return task
 
     # ========================================================================
@@ -385,9 +387,9 @@ Generate an updated recursive summary that incorporates the new conversation."""
         Returns:
             Assistant's response
         """
-        print(f"\n{'─'*70}")
+        print(f"\n{'─' * 70}")
         print(f"💬 Processing message...")
-        print(f"{'─'*70}")
+        print(f"{'─' * 70}")
 
         # Retrieve memories
         print(f"🔍 Retrieving memories...")
@@ -419,12 +421,15 @@ Generate an updated recursive summary that incorporates the new conversation."""
             )
 
         # Add assistant response to history
-        self.message_history.append({"role": "assistant", "content": assistant_response})
-        
-        # TODO: Make background thread and run this in background, assistant_response should be returned immediately
+        self.message_history.append(
+            {"role": "assistant", "content": assistant_response}
+        )
+
         # Process memory window if threshold reached
         if len(self.message_history) >= self.memory_window:
-            print(f"\n🔄 Memory window threshold reached, triggering background processing...")
+            print(
+                f"\n🔄 Memory window threshold reached, triggering background processing..."
+            )
             self._trigger_memory_processing()
 
         return assistant_response
@@ -440,9 +445,9 @@ Generate an updated recursive summary that incorporates the new conversation."""
     async def wait_for_processing(self, timeout: Optional[float] = None):
         """
         Wait for all background memory processing to complete.
-        
+
         Useful for graceful shutdown or testing.
-        
+
         Args:
             timeout: Maximum time to wait in seconds
         """
@@ -456,9 +461,9 @@ Generate an updated recursive summary that incorporates the new conversation."""
 
     def print_status(self):
         """Print current session status."""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"📊 SESSION STATUS")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Block: {self.memory_block.meta_data.id}")
         print(f"Name: {self.memory_block.name}")
         print(f"Message History: {len(self.message_history)} messages")
@@ -469,41 +474,47 @@ Generate an updated recursive summary that incorporates the new conversation."""
         print(f"\n📈 METRICS")
         print(f"Total Messages: {self.metrics['total_messages']}")
         print(f"Memory Windows Processed: {self.metrics['memory_windows_processed']}")
-        if self.metrics['last_processing_time']:
-            print(f"Last Processing: {self.metrics['last_processing_time'].strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"{'='*60}\n")
+        if self.metrics["last_processing_time"]:
+            print(
+                f"Last Processing: {self.metrics['last_processing_time'].strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+        print(f"{'=' * 60}\n")
 
     async def print_task_status(self):
         """Print background task status."""
         status = await self.get_processing_status()
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"🔧 BACKGROUND TASK STATUS")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Total Tasks: {status['total_tasks']}")
         print(f"Running: {status['running']}")
         print(f"Completed: {status['completed']}")
         print(f"Failed: {status['failed']}")
-        
-        if status['tasks']:
+
+        if status["tasks"]:
             print(f"\nTask Details:")
-            for task_id, task_info in status['tasks'].items():
+            for task_id, task_info in status["tasks"].items():
                 print(f"\n  {task_id}:")
                 print(f"    Status: {task_info['status']}")
                 print(f"    Started: {task_info['started_at'].strftime('%H:%M:%S')}")
-                if task_info['completed_at']:
-                    duration = (task_info['completed_at'] - task_info['started_at']).total_seconds()
-                    print(f"    Completed: {task_info['completed_at'].strftime('%H:%M:%S')} ({duration:.2f}s)")
-                if task_info['error']:
+                if task_info["completed_at"]:
+                    duration = (
+                        task_info["completed_at"] - task_info["started_at"]
+                    ).total_seconds()
+                    print(
+                        f"    Completed: {task_info['completed_at'].strftime('%H:%M:%S')} ({duration:.2f}s)"
+                    )
+                if task_info["error"]:
                     print(f"    Error: {task_info['error']}")
-        
-        print(f"{'='*60}\n")
+
+        print(f"{'=' * 60}\n")
 
     async def shutdown(self, timeout: float = 30.0):
         """
         Gracefully shutdown the chat service.
-        
+
         Waits for background tasks to complete before shutdown.
-        
+
         Args:
             timeout: Maximum time to wait for tasks to complete
         """
