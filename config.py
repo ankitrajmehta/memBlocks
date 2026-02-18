@@ -4,10 +4,15 @@ This centralizes environment configuration so modules import `settings` instead
 of calling `os.getenv` or `load_dotenv` directly.
 """
 
+from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+
+# Always resolve .env relative to this file's directory (project root),
+# regardless of the current working directory at runtime.
+_ENV_FILE = Path(__file__).resolve().parent / ".env"
 
 
 class Settings(BaseSettings):
@@ -51,12 +56,12 @@ class Settings(BaseSettings):
         env="LLM_MEMORY_UPDATE_TEMPERATURE",
     )
 
-    # Arize (for monitoring)
-    arize_space_id: str = Field(..., env="ARIZE_SPACE_ID")
-    arize_api_key: str = Field(..., env="ARIZE_API_KEY")
-    arize_project_name: str = Field(..., env="ARIZE_PROJECT_NAME")
+    # Arize (for monitoring) - optional, monitoring is skipped if not set
+    arize_space_id: Optional[str] = Field(None, env="ARIZE_SPACE_ID")
+    arize_api_key: Optional[str] = Field(None, env="ARIZE_API_KEY")
+    arize_project_name: Optional[str] = Field("memBlocks", env="ARIZE_PROJECT_NAME")
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=str(_ENV_FILE), env_file_encoding="utf-8")
 
 
 # Single configured settings instance to import from other modules
