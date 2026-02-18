@@ -174,7 +174,6 @@ Entities: {", ".join(memory_item.entities)}""".strip()
             bool: True if operations completed successfully
         """
 
-
         embedder = VectorDBManager.get_embedder()
         current_time = datetime.now().isoformat()
 
@@ -207,7 +206,8 @@ Entities: {", ".join(memory_item.entities)}""".strip()
                 # Map back to real Qdrant ID
                 id_mapping[simple_id] = point.id
 
-                existing_mem = {"id": simple_id, **point.payload}
+                # Ensure simple ID takes priority over any 'id' in payload
+                existing_mem = {**point.payload, "id": simple_id}
                 existing_memories_list.append(existing_mem)
 
         # If no similar memories exist, just ADD directly
@@ -273,9 +273,7 @@ Entities: {", ".join(memory_item.entities)}""".strip()
             # Map simple ID back to real Qdrant point ID
             real_id = id_mapping.get(op.id)
             if not real_id:
-                print(
-                    f" Warning: Could not map ID {op.id} to real Qdrant ID, skipping"
-                )
+                print(f" Warning: Could not map ID {op.id} to real Qdrant ID, skipping")
                 continue
 
             if op.operation == "UPDATE":
@@ -291,11 +289,16 @@ Entities: {", ".join(memory_item.entities)}""".strip()
                 )
                 updated_vector = embedder.embed_text(updated_text)
 
+                # Remove 'id' from payload since Qdrant stores it separately
+                payload_without_id = {
+                    k: v for k, v in op.updated_memory.items() if k != "id"
+                }
+
                 # Upsert with real Qdrant ID
                 success = VectorDBManager.store_vector(
                     self.collection_name,
                     updated_vector,
-                    op.updated_memory,
+                    payload_without_id,
                     point_id=real_id,
                 )
                 if success:

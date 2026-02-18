@@ -11,8 +11,9 @@ Your input is a list of messages from a conversation. Each message may contain m
 
 - Extract **all** distinct semantic memory blocks from the conversation.
 - Create a JSON object with a single key `"memories"` containing a list of these memory blocks.
-- Each memory block must be minimal, focused on a single topic, fact, or event.
-- Memory blocks may combine information from multiple messages if the topic is the same, but each memory block must remain **self-contained**.
+- Each memory block must be **ATOMIC**: focused on a single, standalone fact, event, or opinion.
+- Each memory must be **UNIQUE WITHIN THE EXTRACTION BATCH**: If multiple messages mention the same information, extract it ONLY ONCE with the most complete version.
+- Memories must be **SELF-CONTAINED**: readable and meaningful without referring to other memories.
 
 ---
 
@@ -28,11 +29,12 @@ Your input is a list of messages from a conversation. Each message may contain m
 2. **content** (exactly ONE sentence)  
    - Capture primary topic, user's intent/goal, and information status (new/refinement/continuation)  
    - Specific and actionable, suitable for future updates  
+   - **Must be semantically unique** within this extraction batch
 
 3. **type** (one of: fact | event | opinion)  
-   - **fact**: Objective, verifiable knowledge  
-   - **event**: Time-bound occurrence, past action, or planned activity  
-   - **opinion**: Subjective preference, belief, or perspective  
+   - **fact**: Objective, verifiable knowledge (e.g., "User is a software engineer")
+   - **event**: Time-bound occurrence, past action, or planned activity (e.g., "User completed the project yesterday")
+   - **opinion**: Subjective preference, belief, or perspective (e.g., "User prefers Python over Java")
 
 4. **entities** (2–8 items)  
    - Proper nouns, technologies, tools, frameworks, people, organizations, domain concepts  
@@ -49,6 +51,10 @@ Your input is a list of messages from a conversation. Each message may contain m
 - The root object must be {{ "memories": [ ... ] }}.
 
 - Ensure **all fields are present** in every memory object.  
+- **ATOMIC EXTRACTION**: Each memory must capture ONE distinct piece of information.  
+- **NO INTERNAL DUPLICATES**: If message 1 says "User is a student" and message 3 says "User studies computer engineering", extract ONE memory: "User is a computer engineering student."  
+- **CONSOLIDATE RELATED INFO**: Combine closely related mentions into a single comprehensive memory.  
+- **SPLIT UNRELATED INFO**: If one message contains multiple unrelated facts, split them into separate memories.
 - Keywords and entities should **not overlap with generic stopwords**.  
 - content must be a complete, grammatically correct sentence.  
 - Type must be **exactly one of**: fact, event, opinion.  
@@ -273,9 +279,8 @@ Output format (JSON only):
 
 """
 
-# TODO: Improve this. This is AI generated prompt. Also add functionality to archive and invalidate instead of delete
 PS2_MEMORY_UPDATE_PROMPT = """
-You are an AI Memory Conflict Resolution Agent. Your task is to decide how to integrate a newly extracted memory with existing semantically similar memories in the knowledge store.
+You are an AI Memory Conflict Resolution Agent. Your task is to intelligently deduplicate and integrate newly extracted memories with existing semantically similar memories in the knowledge store.
 
 You will receive:
 1. **New Memory**: A complete SemanticMemoryUnit with all fields
@@ -302,46 +307,104 @@ Each memory contains:
 
 ### For Each Existing Memory:
 - **UPDATE**: Merge new info into existing (refinement, extension)
-- **DELETE**: Remove (contradicted by new memory)
+- **DELETE**: Remove (contradicted by new memory, or superseded)
 - **NONE**: No change needed
+
+## Semantic Deduplication Guidelines
+
+### When to consider memories as DUPLICATES:
+
+1. **Content Similarity**: Core semantic meaning is identical or overlapping (>80% overlap)
+   - "User is a computer engineering student" ≈ "User studies computer engineering" ≈ "User is studying computer engineering"
+   
+2. **Information Subsumption**: One memory is a subset/superset of another
+   - "User is a student" is SUBSUMED by "User is a computer engineering student"
+
+### When memories are DISTINCT:
+
+1. **Different Aspects**: Same entity but different properties
+   - "User is a computer engineering student" (identity)
+   - "User is seeking help with minor project" (current activity)
+
+2. **Temporal Separation**: Different time-bound events
+   - "User completed project X yesterday" (past event)
+   - "User is working on project Y" (current event)
+
+3. **Specificity Levels**: General + specific facts can coexist IF they provide different value
+   - KEEP BOTH: "User prefers Python" + "User uses Python for data science"
+   - MERGE INTO ONE: "User is a student" + "User studies computer engineering"
 
 ## Decision Rules
 
 **ADD New Memory When:**
-- Contains novel information not present in existing memories
-- Semantically distinct from all existing candidates
+- Contains **novel information** not semantically covered by existing memories
+- Provides a **distinct aspect** even if same entity (e.g., occupation vs hobby)
+- Higher specificity that adds meaningful context beyond existing general facts
 
 **NONE (New Memory) When:**
-- Duplicate or semantically equivalent to existing
-- Adds no meaningful new information
+- **Duplicate**: Semantically identical to existing memory (>90% overlap)
+- **Subsumed**: Existing memory already captures this information fully or with more detail
+- **Redundant**: Adds no meaningful new dimensions to existing knowledge
 
 **UPDATE Existing Memory When:**
-- New memory refines or extends existing
-- Same topic with additional detail
+- New memory **refines** or **extends** existing (adds detail, corrects specificity)
+- New memory provides **additional context** to same core fact
+- New memory is **more comprehensive** version of existing (e.g., "computer engineering student" vs "student")
+- **Merge strategy**: Combine entities, keywords, update content to most complete version
 
 **DELETE Existing Memory When:**
-- New memory contradicts existing
-- User explicitly corrected previous information
+- New memory **contradicts** existing fact (e.g., location change, job change)
+- New memory **supersedes** existing with more accurate information
+- Existing memory is a **weaker/partial version** that should be replaced by UPDATE of another memory
 
 **NONE (Existing Memory) When:**
-- No relationship to new memory
-- Both can coexist without conflict
+- No semantic overlap with new memory
+- Memories can coexist without redundancy
+- Different aspects/dimensions of same entity
 
 ## OUTPUT FORMAT (JSON ONLY):
 {{
   "new_memory_operation": {{
     "operation": "ADD" | "NONE",
-    "reason": "Explanation for decision"
+    "reason": "Explanation for decision (mention semantic overlap % if NONE)"
   }},
   "existing_memory_operations": [
     {{
       "id": "0",  // Simple integer ID (0, 1, 2, ...) matching the existing memory
       "operation": "UPDATE" | "DELETE" | "NONE",
       "updated_memory": {{ /* Complete memory for UPDATE - use same simple ID */ }},
-      "reason": "Explanation"
+      "reason": "Explanation (mention semantic relationship)"
     }}
   ]
 }}
+
+## Examples of Deduplication Decisions
+
+### Example 1: Clear Duplicate (NONE new, keep existing)
+**New**: "User is studying computer engineering"  
+**Existing [0]**: "User is a computer engineering student"  
+**Decision**: new_memory_operation: NONE (90% semantic overlap, existing is more complete)
+
+### Example 2: Subsumption (UPDATE existing with more detail)
+**New**: "User is a computer engineering student seeking help with minor project"  
+**Existing [0]**: "User is a computer engineering student"  
+**Existing [1]**: "User is seeking project help"  
+**Decision**:  
+- new_memory_operation: NONE (covered by updated existing)
+- existing[0]: UPDATE (add context about project help)
+- existing[1]: DELETE (subsumed by updated existing[0])
+
+### Example 3: Distinct Aspects (ADD new)
+**New**: "User prefers using PyTorch over TensorFlow"  
+**Existing [0]**: "User is a machine learning engineer"  
+**Decision**: new_memory_operation: ADD (different aspect: preference vs occupation)
+
+### Example 4: Contradiction (DELETE old, ADD new)
+**New**: "User moved to Berlin in 2024"  
+**Existing [0]**: "User lives in Kathmandu"  
+**Decision**:
+- new_memory_operation: ADD
+- existing[0]: DELETE (contradicted by location change)
 
 ## IMPORTANT ID HANDLING
 
@@ -353,11 +416,12 @@ The existing memories provided use **simple integer IDs** (0, 1, 2, ...) instead
 ## CRITICAL GUIDELINES
 
 1. Output ONLY valid JSON - no markdown, no extra text
-2. Complete memory objects for UPDATE - include ALL fields
+2. Complete memory objects for UPDATE - include ALL fields (id, content, keywords, type, entities, confidence, memory_time, source, updated_at)
 3. Preserve IDs - never generate new IDs for existing memories  
-4. Be conservative - prefer NONE over risky operations
-5. Independent operations - new memory operation doesn't affect existing decisions
-6. Hard DELETE - actually remove from vector store
+4. **Be aggressive with deduplication** - prefer merging/discarding over storing redundant memories
+5. **Entity + Type matching** - key signal for duplicates (same entities + same type = likely duplicate)
+6. **Content overlap** - if >80% semantic overlap, strongly consider NONE/UPDATE/DELETE
+7. Hard DELETE - actually remove from vector store (no soft delete)
 
 **Process the input and return ONLY valid JSON output.**
 """
