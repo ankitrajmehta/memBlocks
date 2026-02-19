@@ -12,6 +12,9 @@ from llm.llm_manager import llm_manager
 from llm.output_models import SummaryOutput
 from prompts import SUMMARY_SYSTEM_PROMPT, ASSISTANT_BASE_PROMPT
 import uuid
+import threading
+from concurrent.futures import Future
+from services.background_utils import BackgroundMongoDBManager, BackgroundLLMProvider
 
 
 class TaskStatus(Enum):
@@ -163,78 +166,175 @@ class ChatService:
             "last_processing_time": None,
         }
 
+        # Background Thread Setup
+        self._bg_loop = asyncio.new_event_loop()
+        self._bg_thread = threading.Thread(target=self._run_bg_loop, daemon=True)
+        self._bg_thread.start()
+        
+        # Initialize background resources in the background thread
+        asyncio.run_coroutine_threadsafe(self._init_bg_resources(), self._bg_loop)
+
+    def _run_bg_loop(self):
+        """Run the dedicated background event loop."""
+        asyncio.set_event_loop(self._bg_loop)
+        self._bg_loop.run_forever()
+
+    async def _init_bg_resources(self):
+        """Initialize resources that must live in the background thread/loop."""
+        try:
+            self._bg_mongo = BackgroundMongoDBManager()
+            self._bg_llm_provider = BackgroundLLMProvider()
+            print("✅ Background resources initialized")
+        except Exception as e:
+            print(f"❌ Failed to initialize background resources: {e}")
+
     # ========================================================================
     # MEMORY WINDOW PROCESSING
     # ========================================================================
-
-    async def _process_memory_window(self, task_id: str):
+# TODO error handling, backgronf thread
+    async def _process_memory_window_task(self, task_id: str, messages_to_process: List[Dict[str, str]]):
         """
-        Process memory window: extract semantic + core memories, generate summary, flush history.
-
-        Args:
-            task_id: Unique identifier for this processing task
-
-        This runs in the background without blocking the chat response.
+        Actual memory processing logic running in background thread.
+        Does NOT access self.message_history directly.
         """
-        async with self._processing_semaphore:
-            async with self._processing_lock:
-                # Snapshot current history before processing
-                messages_to_process = self.message_history.copy()
+        print(f"🔄 MEMORY PIPELINE START (Task: {task_id[:12]}...)")
+        print(f"   Processing {len(messages_to_process)} messages...")
 
-            if not messages_to_process:
-                return
-
-            print(f"🔄 MEMORY PIPELINE START (Task: {task_id[:12]}...)")
-            print(f"   Processing {len(messages_to_process)} messages...")
+        try:
+            # use thread-local providers
+            llm_provider = self._bg_llm_provider
+            mongo_provider = self._bg_mongo
 
             # STEP 1: Extract semantic memories
             if self.memory_block.semantic_memories:
                 print(f"   → STEP 1: Semantic Extraction...")
                 semantic_memories = (
                     await self.memory_block.semantic_memories.extract_semantic_memories(
-                        messages=messages_to_process
+                        messages=messages_to_process,
+                        llm_provider=llm_provider
                     )
                 )
                 print(f"   ✓ Extracted {len(semantic_memories)} semantic memories")
 
                 # Store memories
                 for mem in semantic_memories:
-                    await self.memory_block.semantic_memories.store_memory(mem)
+                    await self.memory_block.semantic_memories.store_memory(
+                        mem, 
+                        llm_provider=llm_provider
+                    )
                 print(f"   ✓ Stored {len(semantic_memories)} memories")
 
             # STEP 2: Extract and update core memory
             if self.memory_block.core_memories:
                 print(f"   → STEP 2: Core Memory Update...")
-                old_core = await self.memory_block.core_memories.get_memories()
+                # Pass db_provider to get_memories
+                old_core = await self.memory_block.core_memories.get_memories(db_provider=mongo_provider)
 
                 new_core = await self.memory_block.core_memories.create_new_core_memory(
-                    messages=messages_to_process, old_core_memory=old_core
+                    messages=messages_to_process, 
+                    old_core_memory=old_core,
+                    llm_provider=llm_provider
                 )
 
                 # Store updated core memory
-                await self.memory_block.core_memories.store_memory(new_core)
+                await self.memory_block.core_memories.store_memory(new_core, db_provider=mongo_provider)
                 print(f"   ✓ Updated core memory")
 
             # STEP 3: Generate recursive summary
             print(f"   → STEP 3: Recursive Summary...")
-            new_summary = await self._generate_recursive_summary(messages_to_process)
+            
+            # Generate summary using background LLM
+            conversation_text = "\n".join(
+                [f"{msg['role'].upper()}: {msg['content']}\n" for msg in messages_to_process]
+            )
 
+            # Retrieve current summary safely? 
+            # NOTE: self.recursive_summary is on main thread. 
+            # We should have passed it in arguments, but we can read it safely if not writing?
+            # Better to pass it in. For now, we'll access it but catch concurrent mods if any.
+            # Actually, `messages_to_process` acts as the snapshot. 
+            # For summary, we might have a slight race if main thread updates it, 
+            # but usually summary updates happen HERE.
+            
+            # We'll need to update _process_memory_window signature to accept current_summary
+            # For now, let's assume valid access or pass it later.
+            pass 
+
+        except Exception as e:
+            print(f"❌ Error in background memory task: {e}")
+            raise e
+
+    async def _generate_recursive_summary_bg(self, messages: List[Dict[str, str]], previous_summary: str) -> str:
+        """Background version of summary generation."""
+        conversation_text = "\n".join(
+            [f"{msg['role'].upper()}: {msg['content']}\n" for msg in messages]
+        )
+
+        user_input = f"""Previous Summary:
+        {previous_summary if previous_summary else "None"}
+
+        Recent Conversation:
+        {conversation_text}
+
+        Generate an updated recursive summary that incorporates the new conversation."""
+
+        try:
+            # Use background LLM provider
+            chain = self._bg_llm_provider.create_structured_chain(
+                system_prompt=SUMMARY_SYSTEM_PROMPT,
+                pydantic_model=SummaryOutput,
+                temperature=settings.llm_recursive_summary_gen_temperature,
+            )
+
+            result = await chain.ainvoke({"input": user_input})
+            return result.summary
+
+        except Exception as e:
+            print(f"⚠️ Failed to generate summary in background: {e}")
+            return previous_summary
+
+    async def _process_memory_window(self, task_id: str):
+        """
+        Orchestrates the background task submission.
+        """
+        async with self._processing_semaphore:
             async with self._processing_lock:
-                self.recursive_summary = new_summary
-            print(f"   ✓ Summary updated")
+                # Snapshot data needed for processing
+                messages_to_process = self.message_history.copy()
+                current_summary = self.recursive_summary
+            
+            if not messages_to_process:
+                return
 
-            # STEP 4: Flush history
-            print(f"   → STEP 4: Flushing History...")
-            async with self._processing_lock:
-                old_len = len(self.message_history)
-                self.message_history = self.message_history[-self.keep_last_n :]
-                print(f"   ✓ Flushed history ({old_len} → {len(self.message_history)})")
+            # Define the work to be done in the background loop
+            async def background_work():
+                await self._process_memory_window_task(task_id, messages_to_process)
+                return await self._generate_recursive_summary_bg(messages_to_process, current_summary)
 
-            # Update metrics
-            self.metrics["memory_windows_processed"] += 1
-            self.metrics["last_processing_time"] = datetime.now()
+            # Submit to background loop
+            future = asyncio.run_coroutine_threadsafe(background_work(), self._bg_loop)
+            
+            try:
+                # Wait for result asynchronously on the main loop
+                # Wrap future in asyncio.wrap_future to await it here
+                new_summary = await asyncio.wrap_future(future)
+                
+                # Update state on main loop
+                async with self._processing_lock:
+                    self.recursive_summary = new_summary
+                    old_len = len(self.message_history)
+                    self.message_history = self.message_history[-self.keep_last_n :]
+                    print(f"   ✓ Flushed history ({old_len} → {len(self.message_history)})")
+                    print(f"   ✓ Summary updated")
 
-            print(f"✅ MEMORY PIPELINE COMPLETE (Task: {task_id[:12]}...)")
+                # Update metrics
+                self.metrics["memory_windows_processed"] += 1
+                self.metrics["last_processing_time"] = datetime.now()
+                print(f"✅ MEMORY PIPELINE COMPLETE (Task: {task_id[:12]}...)")
+
+            except Exception as e:
+                print(f"❌ Error waiting for background task: {e}")
+                raise e
 
     async def _generate_recursive_summary(self, messages: List[Dict[str, str]]) -> str:
         """
