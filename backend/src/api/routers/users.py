@@ -17,7 +17,7 @@ async def create_user(
     client: MemBlocksClient = Depends(get_client),
 ) -> Dict[str, Any]:
     """Create a new user (idempotent — returns existing user if already present)."""
-    return await client.users.create_user(body.user_id)
+    return await client.create_user(body.user_id)
 
 
 @router.get("/", response_model=List[Dict[str, Any]])
@@ -25,7 +25,7 @@ async def list_users(
     client: MemBlocksClient = Depends(get_client),
 ) -> List[Dict[str, Any]]:
     """List all users."""
-    return await client.users.list_users()
+    return await client.list_users()
 
 
 @router.get("/{user_id}", response_model=Dict[str, Any])
@@ -34,7 +34,7 @@ async def get_user(
     client: MemBlocksClient = Depends(get_client),
 ) -> Dict[str, Any]:
     """Get a user by ID."""
-    user = await client.users.get_user(user_id)
+    user = await client.get_user(user_id)
     if not user:
         raise HTTPException(status_code=404, detail=f"User '{user_id}' not found")
     return user

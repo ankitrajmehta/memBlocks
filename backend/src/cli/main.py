@@ -20,17 +20,17 @@ async def _run_cli() -> None:
     if not user_id:
         user_id = "default_user"
 
-    user = await client.users.get_or_create_user(user_id)
+    user = await client.get_or_create_user(user_id)
     print(f"User: {user.get('user_id')}")
 
     # ---- block selection ----
-    blocks = await client.blocks.get_user_blocks(user_id)
+    blocks = await client.get_user_blocks(user_id)
 
     block = None
     if blocks:
         print(f"\nFound {len(blocks)} existing block(s):")
         for i, b in enumerate(blocks, 1):
-            print(f"  {i}. {b.name} ({b.meta_data.id})")
+            print(f"  {i}. {b.name} ({b.id})")
 
         choice = input("\nSelect block number, or press Enter to create new: ").strip()
         if choice.isdigit():
@@ -42,20 +42,13 @@ async def _run_cli() -> None:
         name = input("New block name (Enter for 'My Memory'): ").strip() or "My Memory"
         desc = input("Block description (Enter to skip): ").strip()
         print("Creating block...")
-        block = await client.blocks.create_block(
-            user_id=user_id, name=name, description=desc
-        )
+        block = await client.create_block(user_id=user_id, name=name, description=desc)
 
-    print(f"\nUsing block: {block.name} ({block.meta_data.id})")
+    print(f"\nUsing block: {block.name} ({block.id})")
 
     # ---- session setup ----
-    engine = client.get_chat_engine(block)
-    session_data: Dict[str, Any] = await engine.sessions.create_session(
-        user_id=user_id,
-        block_id=block.meta_data.id,
-    )
-    session_id: str = session_data["session_id"]
-    print(f"Session: {session_id}")
+    session = await client.create_session(user_id=user_id, block_id=block.id)
+    print(f"Session: {session.id}")
 
     # ---- chat loop ----
     print("\nType your message (Ctrl+C or 'quit' to exit):\n")
@@ -72,11 +65,37 @@ async def _run_cli() -> None:
                 break
 
             try:
-                result = await engine.chat.send_message(
-                    session_id=session_id,
-                    user_message=user_input,
+                # Retrieve memory context
+                context = await block.retrieve(user_input)
+                memory_window = await session.get_memory_window()
+                summary = await session.get_recursive_summary()
+
+                # Build system prompt
+                system_parts = [
+                    "You are a helpful assistant with memory of past conversations."
+                ]
+                if summary:
+                    system_parts.append(
+                        f"<Conversation Summary>\n{summary}\n</Conversation Summary>"
+                    )
+                memory_str = context.to_prompt_string()
+                if memory_str:
+                    system_parts.append(memory_str)
+                system_prompt = "\n\n".join(system_parts)
+
+                # Call LLM
+                messages_for_llm = (
+                    [{"role": "system", "content": system_prompt}]
+                    + memory_window
+                    + [{"role": "user", "content": user_input}]
                 )
-                print(f"\nAssistant: {result['response']}\n")
+                ai_response = await client.llm.chat(messages=messages_for_llm)
+
+                print(f"\nAssistant: {ai_response}\n")
+
+                # Persist turn
+                await session.add(user_msg=user_input, ai_response=ai_response)
+
             except Exception as e:
                 print(f"Error: {e}\n")
 

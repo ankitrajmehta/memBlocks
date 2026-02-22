@@ -114,7 +114,6 @@ EMBEDDINGS_MODEL=nomic-embed-text
 # === Memory Pipeline Behavior (Optional) ===
 MEMORY_WINDOW=10          # Messages before triggering pipeline
 KEEP_LAST_N=5             # Messages retained after flush
-MAX_CONCURRENT_PROCESSING=3
 
 # === LLM Temperatures (Optional) ===
 LLM_CONVO_TEMPERATURE=0.7
@@ -122,11 +121,6 @@ LLM_SEMANTIC_EXTRACTION_TEMPERATURE=0.0
 LLM_CORE_EXTRACTION_TEMPERATURE=0.0
 LLM_RECURSIVE_SUMMARY_GEN_TEMPERATURE=0.3
 LLM_MEMORY_UPDATE_TEMPERATURE=0.0
-
-# === Arize Monitoring (Optional) ===
-ARIZE_SPACE_ID=
-ARIZE_API_KEY=
-ARIZE_PROJECT_NAME=memBlocks
 ```
 
 ### Configuration via Code
@@ -178,7 +172,6 @@ client = MemBlocksClient(config)
 |---------|---------------------|---------|-------------|
 | `memory_window` | `MEMORY_WINDOW` | `10` | Messages to accumulate before processing |
 | `keep_last_n` | `KEEP_LAST_N` | `5` | Messages kept after pipeline flush |
-| `max_concurrent_processing` | `MAX_CONCURRENT_PROCESSING` | `3` | Max concurrent pipeline runs |
 
 ### Temperature Settings
 
@@ -205,29 +198,47 @@ async def main():
     config = MemBlocksConfig()
     client = MemBlocksClient(config)
     
-    # Create user
-    user = await client.users.create_user("alice")
-    print(f"Created user: {user['user_id']}")
+    # Phase A — Initialization (once per run/user/session)
+    user = await client.get_or_create_user("alice")
+    print(f"User: {user['user_id']}")
     
-    # Create memory block
-    block = await client.blocks.create_block(
+    block = await client.create_block(
         user_id="alice",
         name="Work Memory",
         description="Professional context and project details"
     )
-    print(f"Created block: {block.name} ({block.meta_data.id})")
+    print(f"Created block: {block.name} ({block.id})")
     
-    # Create chat session
-    engine = client.get_chat_engine(block)
-    session = await engine.sessions.create_session("alice", block.meta_data.id)
-    print(f"Created session: {session['session_id']}")
+    session = await client.create_session(user_id="alice", block_id=block.id)
+    print(f"Created session: {session.id}")
     
-    # Send a message
-    result = await engine.chat.send_message(
-        session_id=session["session_id"],
-        user_message="Hello! I'm working on a machine learning project."
+    # Phase B — Per-turn loop
+    user_msg = "Hello! I'm working on a machine learning project."
+    
+    # 1. Retrieve memory context
+    context = await block.retrieve(user_msg)
+    memory_window = await session.get_memory_window()
+    summary = await session.get_recursive_summary()
+    
+    # 2. Build system prompt
+    system_parts = ["You are a helpful assistant."]
+    if summary:
+        system_parts.append(f"<Summary>\n{summary}\n</Summary>")
+    if not context.is_empty():
+        system_parts.append(context.to_prompt_string())
+    system_prompt = "\n\n".join(system_parts)
+    
+    # 3. Call LLM (you control this!)
+    messages = (
+        [{"role": "system", "content": system_prompt}]
+        + memory_window
+        + [{"role": "user", "content": user_msg}]
     )
-    print(f"Response: {result['response']}")
+    ai_response = await client.llm.chat(messages=messages)
+    print(f"Response: {ai_response}")
+    
+    # 4. Persist the turn
+    await session.add(user_msg=user_msg, ai_response=ai_response)
     
     # Cleanup
     await client.close()
@@ -238,17 +249,31 @@ asyncio.run(main())
 ### Expected Output
 
 ```
-Created user: alice
+User: alice
    ✓ Created semantic collection: block_xxx_semantic
    ✓ Created core memory document: block_xxx
 ✅ Created memory block: block_xxx
-Created session: session_yyy
-💬 Processing message...
-🔍 Retrieving memories...
-   📚 Semantic: 0 memories
-   🧠 Core: No
+✅ Created session: session_yyy (block: block_xxx)
 Response: Hello! I'd be happy to help with your machine learning project...
 ```
+
+---
+
+## Library Philosophy
+
+**memBlocks is a memory management library — not an inference engine.**
+
+You control the LLM calls. The library handles:
+- Memory retrieval (semantic, core, resource)
+- Memory storage and deduplication
+- Conversation window management
+- Recursive summary generation
+
+This design gives you maximum flexibility:
+- Use any LLM provider
+- Use any prompting strategy
+- Use any conversation format
+- The library stays out of your way
 
 ---
 

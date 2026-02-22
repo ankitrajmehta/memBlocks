@@ -72,7 +72,11 @@ class UserManager:
         """
         return await self._mongo.list_users()
 
-    async def get_or_create_user(self, user_id: str) -> Dict[str, Any]:
+    async def get_or_create_user(
+        self,
+        user_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Return an existing user or create a new one.
 
@@ -80,12 +84,13 @@ class UserManager:
 
         Args:
             user_id: User identifier.
+            metadata: Optional metadata (used only on creation).
 
         Returns:
             User document dict.
         """
         user = await self._mongo.get_user(user_id)
         if not user:
-            user = await self._mongo.create_user(user_id)
+            user = await self._mongo.create_user(user_id, metadata)
             print(f"✅ Created new user: {user_id}")
         return user

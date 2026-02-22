@@ -1,6 +1,7 @@
 """Public re-exports for the memblocks.models package."""
 
 from memblocks.models.block import MemoryBlock, MemoryBlockMetaData
+from memblocks.models.retrieval import RetrievalResult
 from memblocks.models.memory import (
     SemanticMemoryData,
     CoreMemoryData,
@@ -35,6 +36,8 @@ __all__ = [
     # Block
     "MemoryBlock",
     "MemoryBlockMetaData",
+    # Retrieval
+    "RetrievalResult",
     # Memory sections
     "SemanticMemoryData",
     "CoreMemoryData",

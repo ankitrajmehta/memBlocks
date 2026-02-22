@@ -3,6 +3,7 @@
 Public API surface — import from here for convenience:
 
     from memblocks import MemBlocksClient, MemBlocksConfig
+    from memblocks import Block, Session, RetrievalResult
     from memblocks.models import MemoryBlock, SemanticMemoryUnit, CoreMemoryUnit
     from memblocks.llm.base import LLMProvider
     from memblocks.llm.groq_provider import GroqLLMProvider
@@ -19,10 +20,15 @@ from memblocks.client import MemBlocksClient
 from memblocks.llm.base import LLMProvider
 from memblocks.llm.groq_provider import GroqLLMProvider
 
+# Stateful objects returned by the client
+from memblocks.services.block import Block
+from memblocks.services.session import Session
+
 # Key model types users commonly type-hint against
 from memblocks.models import (
     MemoryBlock,
     MemoryBlockMetaData,
+    RetrievalResult,
     SemanticMemoryUnit,
     CoreMemoryUnit,
     ResourceMemoryUnit,
@@ -37,9 +43,13 @@ __all__ = [
     # LLM
     "LLMProvider",
     "GroqLLMProvider",
+    # Stateful objects
+    "Block",
+    "Session",
     # Models
     "MemoryBlock",
     "MemoryBlockMetaData",
+    "RetrievalResult",
     "SemanticMemoryUnit",
     "CoreMemoryUnit",
     "ResourceMemoryUnit",

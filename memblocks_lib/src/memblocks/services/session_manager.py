@@ -1,39 +1,59 @@
-"""SessionManager — replaces in-memory SessionManager from services/block_service.py."""
+"""SessionManager — creates and loads Session objects wired with pipeline."""
 
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from memblocks.services.session import Session
+
 if TYPE_CHECKING:
-    from memblocks.storage.mongo import MongoDBAdapter
+    from memblocks.services.block_manager import BlockManager
+    from memblocks.services.core_memory import CoreMemoryService
+    from memblocks.services.memory_pipeline import MemoryPipeline
+    from memblocks.services.semantic_memory import SemanticMemoryService
     from memblocks.services.transparency import OperationLog
+    from memblocks.storage.mongo import MongoDBAdapter
+    from memblocks.config import MemBlocksConfig
+    from memblocks.llm.base import LLMProvider
+    from memblocks.storage.qdrant import QdrantAdapter
+    from memblocks.storage.embeddings import EmbeddingProvider
 
 
 class SessionManager:
     """
-    Manages chat session state, persisted in MongoDB.
+    Creates and loads Session objects.
 
-    Replaces: SessionManager (block_service.py:146-183).
-
-    Key changes from the original:
-    - Session state is persisted to MongoDB (was in-memory dict → lost on restart).
-    - Messages are stored per session in MongoDB (SessionManager now owns message
-      persistence that was previously in-memory in ChatService.message_history).
-    - Dependency-injected MongoDBAdapter (no global singletons).
+    Each Session is wired with a MemoryPipeline scoped to the session's
+    block (a new SemanticMemoryService instance per block's collection).
     """
 
     def __init__(
         self,
         mongo_adapter: "MongoDBAdapter",
+        llm_provider: "LLMProvider",
+        qdrant_adapter: "QdrantAdapter",
+        embedding_provider: "EmbeddingProvider",
+        core_memory_service: "CoreMemoryService",
+        config: "MemBlocksConfig",
+        memory_window: int = 10,
+        keep_last_n: int = 5,
         operation_log: Optional["OperationLog"] = None,
+        event_bus: Optional[Any] = None,
+        processing_history: Optional[Any] = None,
+        retrieval_log: Optional[Any] = None,
     ) -> None:
-        """
-        Args:
-            mongo_adapter: MongoDB persistence layer.
-            operation_log: Phase-9 transparency placeholder.
-        """
         self._mongo = mongo_adapter
+        self._llm = llm_provider
+        self._qdrant = qdrant_adapter
+        self._embeddings = embedding_provider
+        self._core = core_memory_service
+        self._config = config
+        self._memory_window = memory_window
+        self._keep_last_n = keep_last_n
         self._log = operation_log
+        self._bus = event_bus
+        self._history = processing_history
+        self._retrieval_log = retrieval_log
 
     # ------------------------------------------------------------------ #
     # Session lifecycle
@@ -43,138 +63,113 @@ class SessionManager:
         self,
         user_id: str,
         block_id: str,
-    ) -> Dict[str, Any]:
+    ) -> "Session":
         """
-        Create and persist a new chat session.
-
-        Mirrors SessionManager.create_session() (block_service.py:152-160) but
-        persists to MongoDB instead of an in-memory dict.
+        Create and persist a new session, returning a stateful Session object.
 
         Args:
             user_id: Owner of the session.
             block_id: Memory block attached to this session.
 
         Returns:
-            Session document dict with at least "session_id".
+            Stateful Session object.
         """
         session_id = f"session_{uuid.uuid4().hex[:8]}"
+        current_time = datetime.utcnow().isoformat()
         session_data: Dict[str, Any] = {
             "session_id": session_id,
             "user_id": user_id,
             "block_id": block_id,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": current_time,
             "messages": [],
+            "recursive_summary": "",
         }
         await self._mongo.create_session(session_data)
         print(f"✅ Created session: {session_id} (block: {block_id})")
-        return session_data
+        return self._make_session(
+            session_id=session_id,
+            user_id=user_id,
+            block_id=block_id,
+            created_at=current_time,
+        )
 
-    async def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def get_session(self, session_id: str) -> Optional["Session"]:
         """
-        Retrieve session metadata.
-
-        Mirrors SessionManager.get_session() (block_service.py:180-182).
+        Load a session from MongoDB and return a stateful Session object.
 
         Args:
             session_id: Session identifier.
 
         Returns:
-            Session document or None.
+            Session object or None if not found.
         """
-        return await self._mongo.get_session(session_id)
+        doc = await self._mongo.get_session(session_id)
+        if not doc:
+            return None
+        return self._make_session(
+            session_id=doc["session_id"],
+            user_id=doc.get("user_id", ""),
+            block_id=doc.get("block_id", ""),
+            created_at=doc.get("created_at"),
+        )
 
     # ------------------------------------------------------------------ #
-    # Block attachment helpers
+    # Internal helpers
     # ------------------------------------------------------------------ #
 
-    async def attach_block(self, session_id: str, block_id: str) -> None:
-        """
-        Attach (or re-attach) a memory block to an existing session.
+    def _make_pipeline(
+        self, block_id: str, semantic_collection: str
+    ) -> "MemoryPipeline":
+        """Build a MemoryPipeline scoped to the given block's Qdrant collection."""
+        from memblocks.services.memory_pipeline import MemoryPipeline
+        from memblocks.services.semantic_memory import SemanticMemoryService
 
-        Mirrors SessionManager.attach_block() (block_service.py:162-166).
-        """
-        await self._mongo.update_session(session_id, {"block_id": block_id})
-        print(f"✅ Attached block {block_id} to session {session_id}")
+        semantic_svc = SemanticMemoryService(
+            llm_provider=self._llm,
+            embedding_provider=self._embeddings,
+            qdrant_adapter=self._qdrant,
+            collection_name=semantic_collection,
+            config=self._config,
+            operation_log=self._log,
+            retrieval_log=self._retrieval_log,
+            event_bus=self._bus,
+        )
+        return MemoryPipeline(
+            semantic_memory_service=semantic_svc,
+            core_memory_service=self._core,
+            llm_provider=self._llm,
+            config=self._config,
+            processing_history=self._history,
+            operation_log=self._log,
+            event_bus=self._bus,
+        )
 
-    async def detach_block(self, session_id: str) -> None:
-        """
-        Remove the block attachment from a session.
-
-        Mirrors SessionManager.detach_block() (block_service.py:168-172).
-        """
-        await self._mongo.update_session(session_id, {"block_id": None})
-        print(f"✅ Detached block from session {session_id}")
-
-    async def get_attached_block(self, session_id: str) -> Optional[str]:
-        """
-        Return the block_id attached to a session, or None.
-
-        Mirrors SessionManager.get_attached_block() (block_service.py:174-178).
-        """
-        session = await self._mongo.get_session(session_id)
-        if session:
-            return session.get("block_id")
-        return None
-
-    # ------------------------------------------------------------------ #
-    # Message management
-    # ------------------------------------------------------------------ #
-
-    async def add_message(
+    def _make_session(
         self,
         session_id: str,
-        role: str,
-        content: str,
-    ) -> None:
+        user_id: str,
+        block_id: str,
+        created_at: Optional[str] = None,
+    ) -> "Session":
         """
-        Append a message to the session's history in MongoDB.
+        Build a wired Session.  We need the block's semantic_collection to
+        construct the pipeline — look it up from the blocks collection.
+        The lookup is deferred to pipeline construction time (lazy), so this
+        method is synchronous.
 
-        Args:
-            session_id: Session identifier.
-            role: "user" or "assistant".
-            content: Message text.
+        Because blocks always have the naming convention
+        ``{block_id}_semantic``, we can derive the collection name without
+        an extra DB round-trip.
         """
-        message: Dict[str, Any] = {
-            "role": role,
-            "content": content,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-        await self._mongo.add_message_to_session(session_id, message)
-
-    async def get_messages(
-        self,
-        session_id: str,
-        limit: int = 100,
-    ) -> List[Dict[str, Any]]:
-        """
-        Return the most recent messages for a session.
-
-        Args:
-            session_id: Session identifier.
-            limit: Maximum number of messages.
-
-        Returns:
-            List of {"role": ..., "content": ...} dicts.
-        """
-        return await self._mongo.get_session_messages(session_id, limit)
-
-    async def get_message_count(self, session_id: str) -> int:
-        """
-        Return the total number of messages in a session.
-
-        Args:
-            session_id: Session identifier.
-
-        Returns:
-            Message count.
-        """
-        return await self._mongo.get_session_message_count(session_id)
-
-    async def clear_messages(self, session_id: str) -> None:
-        """
-        Clear all messages from a session (e.g. after pipeline flush).
-
-        Args:
-            session_id: Session identifier.
-        """
-        await self._mongo.clear_session_messages(session_id)
+        semantic_collection = f"{block_id}_semantic"
+        pipeline = self._make_pipeline(block_id, semantic_collection)
+        return Session(
+            session_id=session_id,
+            user_id=user_id,
+            block_id=block_id,
+            mongo=self._mongo,
+            pipeline=pipeline,
+            memory_window=self._memory_window,
+            keep_last_n=self._keep_last_n,
+            created_at=created_at,
+        )

@@ -459,6 +459,61 @@ class MongoDBAdapter:
             {"$set": {"messages": []}},
         )
 
+    async def trim_session_messages(self, session_id: str, keep_last_n: int) -> None:
+        """
+        Trim the session's messages array in MongoDB, keeping only the last
+        ``keep_last_n`` messages.
+
+        Called by Session.add() after the memory pipeline completes, so the
+        DB stays in sync with what the user sees via get_memory_window().
+
+        Args:
+            session_id: The session to trim.
+            keep_last_n: Number of most-recent messages to retain.
+        """
+        doc = await self.sessions.find_one({"session_id": session_id}, {"messages": 1})
+        if not doc:
+            return
+        messages: List[Dict[str, Any]] = doc.get("messages", [])
+        trimmed = messages[-keep_last_n:] if len(messages) > keep_last_n else messages
+        await self.sessions.update_one(
+            {"session_id": session_id},
+            {"$set": {"messages": trimmed}},
+        )
+
+    async def set_session_summary(self, session_id: str, summary: str) -> None:
+        """
+        Persist the rolling recursive summary for a session.
+
+        Stored as the ``recursive_summary`` field on the session document so
+        it survives process restarts.
+
+        Args:
+            session_id: The session to update.
+            summary: New summary string.
+        """
+        await self.sessions.update_one(
+            {"session_id": session_id},
+            {"$set": {"recursive_summary": summary}},
+        )
+
+    async def get_session_summary(self, session_id: str) -> str:
+        """
+        Retrieve the persisted recursive summary for a session.
+
+        Args:
+            session_id: The session to query.
+
+        Returns:
+            Summary string, or empty string if not yet set.
+        """
+        doc = await self.sessions.find_one(
+            {"session_id": session_id}, {"recursive_summary": 1}
+        )
+        if not doc:
+            return ""
+        return doc.get("recursive_summary", "")
+
     # ------------------------------------------------------------------
     # UTILITY
     # ------------------------------------------------------------------

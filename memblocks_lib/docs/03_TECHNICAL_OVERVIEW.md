@@ -45,6 +45,7 @@ memblocks_lib/
     │   ├── block.py         # MemoryBlock, MemoryBlockMetaData
     │   ├── memory.py        # (reserved)
     │   ├── units.py         # SemanticMemoryUnit, CoreMemoryUnit, etc.
+    │   ├── retrieval.py     # RetrievalResult
     │   ├── llm_outputs.py   # LLM output schemas (PS1, PS2, etc.)
     │   └── transparency.py  # OperationEntry, RetrievalEntry, etc.
     │
@@ -63,16 +64,22 @@ memblocks_lib/
     │   ├── __init__.py
     │   ├── user_manager.py      # User CRUD
     │   ├── block_manager.py     # Block lifecycle
+    │   ├── block.py             # Block (stateful retrieval object)
     │   ├── session_manager.py   # Chat sessions
+    │   ├── session.py           # Session (stateful session object)
     │   ├── semantic_memory.py   # Semantic memory (PS1 + PS2)
     │   ├── core_memory.py       # Core memory
     │   ├── memory_pipeline.py   # Background processing
-    │   ├── chat_engine.py       # Conversation handling
     │   └── transparency.py      # Logging & events
     │
     └── prompts/             # LLM prompt templates
         └── __init__.py      # All 5 prompts
 ```
+
+**Key Design Change:** The library no longer includes a `ChatEngine` or inference logic. Instead:
+- `Block` — stateful object with retrieval methods (`retrieve()`, `core_retrieve()`, etc.)
+- `Session` — stateful object with window management (`get_memory_window()`, `add()`)
+- User controls their own LLM calls
 
 ### Architectural Layers
 
@@ -81,7 +88,8 @@ memblocks_lib/
 │                        CLIENT LAYER                          │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │              MemBlocksClient                         │    │
-│  │  (wires everything together, exposes .users, .blocks)│    │
+│  │  (wires everything together, flat API:               │    │
+│  │   get_or_create_user, create_block, create_session)  │    │
 │  └─────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -89,9 +97,9 @@ memblocks_lib/
 ┌─────────────────────────────────────────────────────────────┐
 │                       SERVICE LAYER                          │
 │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌──────────┐ │
-│  │UserManager │ │BlockManager│ │ChatEngine  │ │Pipeline  │ │
-│  │            │ │            │ │            │ │          │ │
-│  │SemMemory   │ │CoreMemory  │ │SessionMgr  │ │Transp.   │ │
+│  │UserManager │ │BlockManager│ │Block       │ │Session   │ │
+│  │            │ │            │ │(retrieve)  │ │(add)     │ │
+│  │SemMemory   │ │CoreMemory  │ │SessionMgr  │ │Pipeline  │ │
 │  └────────────┘ └────────────┘ └────────────┘ └──────────┘ │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -114,6 +122,8 @@ memblocks_lib/
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**Key Change:** No more `ChatEngine` layer. The user calls `block.retrieve()` and `session.add()` directly, then makes their own LLM calls.
+
 ### Dependency Injection Pattern
 
 The library uses constructor injection throughout. No globals, no module-level singletons.
@@ -135,13 +145,34 @@ class MemBlocksClient:
         self.retrieval_log = RetrievalLog()
         
         # 3. Services (receive adapters + transparency objects)
-        self.users = UserManager(self.mongo)
-        self.blocks = BlockManager(
-            self.mongo, self.qdrant, self.embeddings, self.operation_log
-        )
-        self.core = CoreMemoryService(
+        self._users = UserManager(self.mongo)
+        self._core = CoreMemoryService(
             self.llm, self.mongo, config, self.operation_log, self.event_bus
         )
+        self._blocks = BlockManager(
+            self.mongo, self.qdrant, self.embeddings, self.llm,
+            self._core, config, self.operation_log, self.retrieval_log
+        )
+        self._sessions = SessionManager(
+            self.mongo, self.llm, self.qdrant, self.embeddings,
+            self._core, config, ...
+        )
+```
+
+**Flat API (public methods):**
+
+```python
+# User management (flat, not sub-manager)
+await client.get_or_create_user("alice")
+await client.get_user("alice")
+
+# Block management (flat, returns Block objects)
+block = await client.create_block(user_id="alice", name="Work")
+block = await client.get_block(block_id)
+
+# Session management (flat, returns Session objects)
+session = await client.create_session(user_id="alice", block_id=block.id)
+session = await client.get_session(session_id)
 ```
 
 **Benefits:**
@@ -159,6 +190,11 @@ from memblocks import (
     MemBlocksClient,
     MemBlocksConfig,
     
+    # Stateful objects (returned by client methods)
+    Block,        # block.retrieve(), block.core_retrieve(), etc.
+    Session,      # session.get_memory_window(), session.add()
+    RetrievalResult,  # context.to_prompt_string(), context.is_empty()
+    
     # LLM (for custom providers)
     LLMProvider,
     GroqLLMProvider,
@@ -171,6 +207,26 @@ from memblocks import (
     ResourceMemoryUnit,
     MemoryOperation,
 )
+```
+
+**New Design Pattern:**
+
+```python
+# Library gives you tools, YOU control the LLM
+block = await client.create_block(user_id="alice", name="Memory")
+session = await client.create_session(user_id="alice", block_id=block.id)
+
+# Per-turn loop
+context = await block.retrieve(user_msg)        # Get memories
+messages = await session.get_memory_window()    # Get history
+summary = await session.get_recursive_summary() # Get summary
+
+# Build prompt and call YOUR LLM
+system = "You are helpful.\n\n" + context.to_prompt_string()
+response = await client.llm.chat([...])
+
+# Persist the turn
+await session.add(user_msg=user_msg, ai_response=response)
 ```
 
 Internal modules (`services.*`, `storage.*`) are accessible but not part of the stable API.
@@ -1175,26 +1231,33 @@ The pipeline runs **asynchronously in the background** when the message window i
 
 ### Triggering the Pipeline
 
-The pipeline is triggered by `ChatEngine.send_message()` when message count reaches `memory_window`:
+The pipeline is triggered by `Session.add()` when message count reaches `memory_window`:
 
 ```python
-# In ChatEngine.send_message()
-msg_count = await self._sessions.get_message_count(session_id)
+# In Session.add()
+msg_count = await self._mongo.get_session_message_count(self.id)
+
 if msg_count >= self._memory_window:
-    self._pipeline.trigger(
-        user_id=session["user_id"],
-        block_id=block_id,
-        messages=list(all_messages),
-        current_summary=self._summary_ref["summary"],
-        message_history_ref=all_messages,
-        summary_ref_holder=self._summary_ref,
+    messages = await self._mongo.get_session_messages(self.id, limit=msg_count)
+    current_summary = await self._mongo.get_session_summary(self.id)
+    
+    new_summary = await self._pipeline.run(
+        user_id=self.user_id,
+        block_id=self.block_id,
+        messages=messages,
+        current_summary=current_summary,
     )
+    
+    # Persist updated summary and trim messages
+    await self._mongo.set_session_summary(self.id, new_summary)
+    await self._mongo.trim_session_messages(self.id, self._keep_last_n)
 ```
 
 **Key points:**
-- Fire-and-forget via `asyncio.create_task()`
-- Returns a `task_id` for status tracking
-- Pipeline runs in parallel with continued conversation
+- `pipeline.run()` is a plain async function (not fire-and-forget)
+- User decides whether to await inline or use `asyncio.create_task()`
+- Summary is persisted to MongoDB (survives restarts)
+- Messages are trimmed in MongoDB after pipeline runs
 
 ---
 
@@ -1211,7 +1274,6 @@ class MemoryPipeline:
         llm_provider: LLMProvider,
         config: MemBlocksConfig,
         keep_last_n: int = 4,
-        max_concurrent: int = 1,
         processing_history: Optional[ProcessingHistory] = None,
         operation_log: Optional[OperationLog] = None,
         event_bus: Optional[EventBus] = None,
@@ -1221,30 +1283,29 @@ class MemoryPipeline:
         self._llm = llm_provider
         self._config = config
         self._keep_last_n = keep_last_n
-        self._semaphore = asyncio.Semaphore(max_concurrent)
 ```
 
-#### Trigger Method
+#### run() Method
 
 ```python
-def trigger(
+async def run(
     self,
     user_id: str,
     block_id: str,
     messages: List[Dict[str, str]],
     current_summary: str,
-    message_history_ref: List[Dict[str, str]],
-    summary_ref_holder: Dict[str, str],
 ) -> str:
-    """Schedule pipeline as background task. Returns task_id."""
-    task_id = f"mem_proc_{uuid.uuid4()}"
-    
-    async def _run_with_tracking():
-        # ... run pipeline, update refs ...
-    
-    asyncio.create_task(_run_with_tracking())
-    return task_id
+    """Run pipeline and return new summary. Plain async function."""
+    # ... run all steps ...
+    return new_summary
 ```
+
+**Key change from old design:**
+- `trigger()` (fire-and-forget) → `run()` (plain async)
+- No more `task_id` tracking
+- No more `_TaskRecord` / `TaskStatus`
+- No more internal `asyncio.Lock` / `Semaphore`
+- Returns the new summary directly
 
 ---
 
@@ -1359,52 +1420,39 @@ print("   ✓ Summary updated")
 #### Step 5: Message History Flush
 
 ```python
-async with self._lock:
-    summary_ref_holder["summary"] = new_summary
-    old_len = len(message_history_ref)
-    del message_history_ref[: max(0, old_len - self._keep_last_n)]
-    print(f"   ✓ Flushed history ({old_len} → {len(message_history_ref)})")
+# In Session.add(), after pipeline.run() returns:
+await self._mongo.set_session_summary(self.id, new_summary)
+await self._mongo.trim_session_messages(self.id, self._keep_last_n)
+print(f"   ✓ Session {self.id}: flushed ({msg_count} → {self._keep_last_n} messages)")
 ```
 
 **What happens:**
-1. Trim message list to last `keep_last_n` messages
-2. Processed messages are discarded
+1. New summary is persisted to MongoDB `sessions.recursive_summary`
+2. Messages in MongoDB are trimmed to last `keep_last_n`
 3. Retained messages form context for next window
 
----
-
-### Concurrency Control
-
-Pipeline runs are controlled by a semaphore:
-
-```python
-self._semaphore = asyncio.Semaphore(max_concurrent)
-
-async def _run(self, ...):
-    async with self._semaphore:
-        # Only max_concurrent pipelines run at once
-        ...
-```
-
-This prevents resource exhaustion when many conversations trigger pipelines simultaneously.
+**Bug fixed:** The old code only trimmed an in-memory list reference, not the actual MongoDB documents. Now both are trimmed.
 
 ---
 
-### Task Tracking
+### User Control of Pipeline Execution
 
-Each pipeline run is tracked for status queries:
+Since `pipeline.run()` is a plain async function, the user decides how to call it:
 
 ```python
-task_id = pipeline.trigger(...)
+# Option 1: Await inline (blocks until done)
+await session.add(user_msg, ai_response)
 
-# Later...
-status = await pipeline.get_task_status(task_id)
-# {"status": "completed", "started_at": ..., "completed_at": ...}
-
-# All tasks
-summary = await pipeline.get_all_statuses()
-# {"total": 10, "running": 1, "completed": 8, "failed": 1}
+# Option 2: Background task (non-blocking)
+import asyncio
+asyncio.create_task(session.add(user_msg, ai_response))
 ```
+
+**Why this design?**
+- No hidden fire-and-forget inside the library
+- User can await and handle errors explicitly
+- User can schedule background tasks when appropriate
+- Simpler mental model — no task tracking complexity
 
 ---
 
@@ -1417,17 +1465,21 @@ User Message 1   ──┐
 User Message 2   ──┤
 User Message 3   ──┤
 ...               ├── Messages accumulate (count < memory_window)
-User Message 10  ──┴─► TRIGGER PIPELINE (background)
-                           │
-                           ├── PS1: Extract (2s)
-                           ├── PS2: Store each (1s × N)
-                           ├── Core Memory Update (1s)
-                           ├── Summary Generation (1s)
-                           └── Flush History (instant)
-                           
-User Message 11  ────────► Can continue immediately
-User Message 12  ────────► (pipeline runs in parallel)
+User Message 10  ──┴─► session.add() calls pipeline.run()
+                            │
+                            ├── PS1: Extract (2s)
+                            ├── PS2: Store each (1s × N)
+                            ├── Core Memory Update (1s)
+                            ├── Summary Generation (1s)
+                            ├── Persist summary to MongoDB
+                            └── Trim messages in MongoDB
+                            
+User Message 11  ────────► Next turn begins (if user awaited)
 ```
+
+**User controls timing:**
+- If user awaits `session.add()`: next turn waits for pipeline
+- If user uses `asyncio.create_task()`: next turn starts immediately
 
 ---
 
@@ -1437,13 +1489,28 @@ User Message 12  ────────► (pipeline runs in parallel)
 |-----------|--------------|---------|-------------|
 | Window size | `memory_window` | 10 | Messages before trigger |
 | Keep last N | `keep_last_n` | 5 | Messages retained after flush |
-| Max concurrent | `max_concurrent_processing` | 3 | Parallel pipelines |
+
+**Note:** `max_concurrent_processing` was removed — user controls concurrency via `asyncio.create_task()` or awaiting directly.
 
 ---
 
-## 7. Chat Engine & Session Flow
+## 7. Per-Turn Loop & Session Management
 
-The Chat Engine orchestrates conversation turns, integrating memory retrieval, context assembly, and LLM calls.
+The library no longer includes a `ChatEngine`. Instead, users implement their own per-turn loop using `Block` and `Session` objects.
+
+---
+
+### Design Philosophy
+
+**Old Design (ChatEngine):**
+- Library controlled the entire conversation flow
+- `send_message()` handled retrieval, LLM call, persistence, and pipeline trigger
+- User had no control over LLM provider or prompting strategy
+
+**New Design (Per-Turn Loop):**
+- Library provides memory retrieval and persistence tools
+- User controls LLM calls, prompting, and conversation format
+- Maximum flexibility for different use cases
 
 ---
 
@@ -1451,377 +1518,251 @@ The Chat Engine orchestrates conversation turns, integrating memory retrieval, c
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      _BlockChatEngine                           │
-│                                                                 │
-│  ┌─────────────┐  ┌─────────────────┐  ┌────────────────────┐  │
-│  │   .chat     │  │   .sessions     │  │   ._semantic       │  │
-│  │ ChatEngine  │  │ SessionManager  │  │ SemanticMemorySvc  │  │
-│  └─────────────┘  └─────────────────┘  └────────────────────┘  │
-│         │                │                      │               │
-│         │                │                      │               │
-│         ▼                ▼                      ▼               │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                  MemoryPipeline                           │  │
-│  │  (triggered when message_window reached)                  │  │
-│  └──────────────────────────────────────────────────────────┘  │
+│                      User's Per-Turn Loop                        │
+│                                                                  │
+│  1. RETRIEVE CONTEXT                                             │
+│     ┌─────────────────────────────────────────────────────────┐ │
+│     │ context = await block.retrieve(user_msg)                │ │
+│     │   ├── Core memory (MongoDB)                             │ │
+│     │   └── Semantic memories (Qdrant vector search)          │ │
+│     └─────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  2. GET WINDOW & SUMMARY                                         │
+│     ┌─────────────────────────────────────────────────────────┐ │
+│     │ messages = await session.get_memory_window()            │ │
+│     │ summary  = await session.get_recursive_summary()        │ │
+│     └─────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  3. BUILD PROMPT & CALL LLM (USER CONTROLS THIS)                │
+│     ┌─────────────────────────────────────────────────────────┐ │
+│     │ system_prompt = build_prompt(context, summary)          │ │
+│     │ response = await client.llm.chat(messages)              │ │
+│     └─────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  4. PERSIST TURN                                                 │
+│     ┌─────────────────────────────────────────────────────────┐ │
+│     │ await session.add(user_msg, ai_response)                │ │
+│     │   ├── Persist to MongoDB                                │ │
+│     │   └── Trigger pipeline if window full                   │ │
+│     └─────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### ChatEngine Class
+### Block Class
 
-**Location:** `services/chat_engine.py`
+Stateful handle to a memory block with retrieval methods.
 
-#### Constructor
+**Location:** `services/block.py`
 
 ```python
-class ChatEngine:
+class Block:
     def __init__(
         self,
-        session_manager: SessionManager,
+        block_id: str,
+        name: str,
+        description: str,
+        user_id: str,
         semantic_memory_service: SemanticMemoryService,
         core_memory_service: CoreMemoryService,
-        memory_pipeline: MemoryPipeline,
-        llm_provider: LLMProvider,
-        config: MemBlocksConfig,
-        memory_window: int = 10,
+        semantic_collection: Optional[str] = None,
+        core_memory_block_id: Optional[str] = None,
+        resource_collection: Optional[str] = None,
         retrieval_top_k: int = 5,
-        retrieval_log: Optional[RetrievalLog] = None,
-        event_bus: Optional[EventBus] = None,
     ):
-        self._sessions = session_manager
-        self._semantic = semantic_memory_service
-        self._core = core_memory_service
-        self._pipeline = memory_pipeline
-        self._llm = llm_provider
-        self._config = config
-        self._memory_window = memory_window
-        self._top_k = retrieval_top_k
+        self.id = block_id
+        self.name = name
+        self.description = description
+        self.user_id = user_id
+        # ...
+```
+
+#### Retrieval Methods
+
+```python
+# Retrieve all memory types
+context = await block.retrieve(user_query)
+
+# Retrieve only core memory
+context = await block.core_retrieve()
+
+# Retrieve only semantic memories
+context = await block.semantic_retrieve(user_query)
+
+# Resource memories (stub)
+context = await block.resource_retrieve(user_query)
+```
+
+---
+
+### Session Class
+
+Stateful handle to a conversation session with window management.
+
+**Location:** `services/session.py`
+
+```python
+class Session:
+    def __init__(
+        self,
+        session_id: str,
+        user_id: str,
+        block_id: str,
+        mongo: MongoDBAdapter,
+        pipeline: MemoryPipeline,
+        memory_window: int = 10,
+        keep_last_n: int = 5,
+    ):
+        self.id = session_id
+        self.user_id = user_id
+        self.block_id = block_id
+        # ...
+```
+
+#### Methods
+
+```python
+# Get message window from MongoDB
+messages = await session.get_memory_window()
+
+# Get persisted summary from MongoDB
+summary = await session.get_recursive_summary()
+
+# Persist a turn (triggers pipeline if window full)
+await session.add(user_msg="...", ai_response="...")
+```
+
+---
+
+### Session.add() Flow
+
+The `add()` method handles turn persistence and pipeline triggering:
+
+```python
+async def add(self, user_msg: str, ai_response: str) -> None:
+    now = datetime.utcnow().isoformat()
+    
+    # 1. Persist messages to MongoDB
+    await self._mongo.add_message_to_session(
+        self.id,
+        {"role": "user", "content": user_msg, "timestamp": now},
+    )
+    await self._mongo.add_message_to_session(
+        self.id,
+        {"role": "assistant", "content": ai_response, "timestamp": now},
+    )
+    
+    # 2. Check if window is full
+    msg_count = await self._mongo.get_session_message_count(self.id)
+    
+    if msg_count >= self._memory_window:
+        # 3. Get messages and current summary
+        messages = await self._mongo.get_session_messages(self.id, limit=msg_count)
+        current_summary = await self._mongo.get_session_summary(self.id)
         
-        # Mutable state (shared with pipeline)
-        self._summary_ref: Dict[str, str] = {"summary": ""}
+        # 4. Run pipeline
+        new_summary = await self._pipeline.run(
+            user_id=self.user_id,
+            block_id=self.block_id,
+            messages=messages,
+            current_summary=current_summary,
+        )
+        
+        # 5. Persist summary and trim messages
+        await self._mongo.set_session_summary(self.id, new_summary)
+        await self._mongo.trim_session_messages(self.id, self._keep_last_n)
 ```
 
 ---
 
-### send_message() Flow
+### Session Document Schema
 
-The main conversation method. Here's the complete flow:
-
-```python
-async def send_message(self, session_id: str, user_message: str) -> Dict[str, Any]:
-```
-
-#### Step 1: Retrieve Session
-
-```python
-session = await self._sessions.get_session(session_id)
-if session is None:
-    raise ValueError(f"Session not found: {session_id}")
-
-block_id: str = session.get("block_id", "")
-```
-
-#### Step 2: Retrieve Memories
-
-```python
-# Semantic memories (vector search)
-semantic_memories = self._retrieve_semantic_memories(user_message)
-
-# Core memory (MongoDB lookup)
-core_memory = await self._core.get(block_id)
-```
-
-**Semantic Retrieval:**
-
-```python
-def _retrieve_semantic_memories(self, query: str) -> List[SemanticMemoryUnit]:
-    results = self._semantic.retrieve([query], top_k=self._top_k)
-    return results[0] if results else []
-```
-
-#### Step 3: Build System Prompt
-
-```python
-system_prompt = await self._build_system_prompt(
-    semantic_memories=semantic_memories,
-    core_memory=core_memory,
-    recursive_summary=self._summary_ref["summary"],
-)
-```
-
-**System Prompt Structure:**
-
-```
-<base prompt>
-
-<CORE_MEMORY>
-[PERSONA]
-{persona_content}
-
-[HUMAN]
-{human_content}
-</CORE_MEMORY>
-
-<CONVERSATION_SUMMARY>
-{recursive_summary}
-</CONVERSATION_SUMMARY>
-
-<SEMANTIC_MEMORY>
-[FACT] {memory_1.content}
-  Keywords: {keywords_1}
-
-[EVENT] {memory_2.content}
-  Keywords: {keywords_2}
-</SEMANTIC_MEMORY>
-```
-
-#### Step 4: Persist User Message
-
-```python
-await self._sessions.add_message(session_id, role="user", content=user_message)
-```
-
-#### Step 5: Build Messages for LLM
-
-```python
-history = await self._sessions.get_messages(session_id)
-messages = [{"role": "system", "content": system_prompt}]
-messages.extend(history)
-```
-
-#### Step 6: Call LLM
-
-```python
-try:
-    assistant_response = await self._llm.chat(
-        messages=messages,
-        temperature=self._config.llm_convo_temperature,
-    )
-except Exception as e:
-    assistant_response = "I encountered an error processing your message."
-```
-
-#### Step 7: Persist Assistant Response
-
-```python
-await self._sessions.add_message(
-    session_id, role="assistant", content=assistant_response
-)
-```
-
-#### Step 8: Check Memory Window
-
-```python
-msg_count = await self._sessions.get_message_count(session_id)
-if msg_count >= self._memory_window:
-    all_messages = await self._sessions.get_messages(session_id)
-    self._pipeline.trigger(
-        user_id=session.get("user_id", ""),
-        block_id=block_id,
-        messages=list(all_messages),
-        current_summary=self._summary_ref["summary"],
-        message_history_ref=all_messages,
-        summary_ref_holder=self._summary_ref,
-    )
-```
-
-#### Step 9: Return Response
-
-```python
-retrieved_context = [
-    {
-        "content": mem.content,
-        "type": mem.type,
-        "confidence": mem.confidence,
-        "keywords": mem.keywords[:5] if mem.keywords else [],
-    }
-    for mem in semantic_memories
-]
-
-return {
-    "response": assistant_response,
-    "retrieved_context": retrieved_context,
-}
-```
-
----
-
-### Session Management
-
-Sessions are persisted in MongoDB with full message history.
-
-#### Session Document Schema
+Sessions are persisted in MongoDB:
 
 ```json
 {
   "_id": ObjectId("..."),
-  "session_id": "session_abc123",
+  "session_id": "session_xyz789",
   "user_id": "alice",
-  "block_id": "block_xyz789",
+  "block_id": "block_abc123",
   "created_at": "2024-01-15T10:00:00",
   "messages": [
     {"role": "user", "content": "Hello!", "timestamp": "..."},
     {"role": "assistant", "content": "Hi there!", "timestamp": "..."}
-  ]
+  ],
+  "recursive_summary": "User discussed machine learning projects..."
 }
 ```
 
-#### Session Lifecycle
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Session Lifecycle                           │
-│                                                                  │
-│  1. CREATE                                                       │
-│     session = await sessions.create_session(user_id, block_id)  │
-│                                                                  │
-│  2. CHAT (repeated)                                              │
-│     result = await chat.send_message(session_id, message)       │
-│     └── Messages appended to session document                   │
-│     └── Memories retrieved for context                          │
-│                                                                  │
-│  3. PIPELINE TRIGGER (when window full)                         │
-│     └── Messages processed                                       │
-│     └── History flushed (keep last N)                            │
-│                                                                  │
-│  4. CONTINUE (chat resumes)                                      │
-│     └── Window counter resets                                    │
-│                                                                  │
-│  5. CLOSE (optional)                                             │
-│     await sessions.clear_messages(session_id)                   │
-└─────────────────────────────────────────────────────────────────┘
-```
+**New field:** `recursive_summary` — persisted rolling summary (survives restarts).
 
 ---
 
-### Block-Scoped Engines
-
-Each `MemoryBlock` gets its own `SemanticMemoryService` instance with a dedicated Qdrant collection:
+### Complete Per-Turn Example
 
 ```python
-# In MemBlocksClient.get_chat_engine()
-def get_chat_engine(self, block: MemoryBlock) -> _BlockChatEngine:
-    collection_name = block.semantic_collection or ""
-    
-    # New semantic service per block (different collection!)
-    semantic_svc = SemanticMemoryService(
-        llm_provider=self.llm,
-        embedding_provider=self.embeddings,
-        qdrant_adapter=self.qdrant,
-        collection_name=collection_name,  # <-- Block-specific
-        config=self.config,
-        ...
-    )
-    
-    # Build pipeline with this semantic service
-    pipeline = MemoryPipeline(
-        semantic_memory_service=semantic_svc,
-        ...
-    )
-    
-    # Build chat engine with this pipeline
-    chat_engine = ChatEngine(
-        session_manager=self.sessions,  # Shared (global)
-        semantic_memory_service=semantic_svc,
-        memory_pipeline=pipeline,
-        ...
-    )
-    
-    return _BlockChatEngine(chat_engine=chat_engine, session_manager=self.sessions)
-```
+import asyncio
+from memblocks import MemBlocksClient, MemBlocksConfig
 
-**Key insight:** Sessions are global, but semantic memories are isolated per block.
+async def main():
+    config = MemBlocksConfig()
+    client = MemBlocksClient(config)
+    
+    # Phase A — Initialization (once)
+    user = await client.get_or_create_user("alice")
+    block = await client.create_block(user_id="alice", name="Assistant")
+    session = await client.create_session(user_id="alice", block_id=block.id)
+    
+    # Phase B — Per-turn loop
+    while True:
+        user_msg = input("You: ")
+        
+        # 1. Retrieve context
+        context = await block.retrieve(user_msg)
+        messages = await session.get_memory_window()
+        summary = await session.get_recursive_summary()
+        
+        # 2. Build system prompt
+        system_parts = ["You are a helpful assistant."]
+        if summary:
+            system_parts.append(f"<Summary>\n{summary}\n</Summary>")
+        if not context.is_empty():
+            system_parts.append(context.to_prompt_string())
+        system_prompt = "\n\n".join(system_parts)
+        
+        # 3. Call LLM
+        llm_messages = (
+            [{"role": "system", "content": system_prompt}]
+            + messages
+            + [{"role": "user", "content": user_msg}]
+        )
+        ai_response = await client.llm.chat(messages=llm_messages)
+        
+        print(f"Assistant: {ai_response}")
+        
+        # 4. Persist turn
+        await session.add(user_msg=user_msg, ai_response=ai_response)
+    
+    await client.close()
+
+asyncio.run(main())
+```
 
 ---
 
-### Context Assembly
+### Fire-and-Forget Pattern
 
-The `_build_system_prompt` method assembles context from multiple sources:
+For non-blocking persistence:
 
 ```python
-async def _build_system_prompt(
-    self,
-    semantic_memories: List[SemanticMemoryUnit],
-    core_memory: Optional[CoreMemoryUnit],
-    recursive_summary: str,
-    base_prompt: str = ASSISTANT_BASE_PROMPT,
-) -> str:
-    parts = [base_prompt]
-    
-    # Core memory (if exists)
-    if core_memory and (core_memory.persona_content or core_memory.human_content):
-        core_text = []
-        if core_memory.persona_content:
-            core_text.append(f"[PERSONA]\n{core_memory.persona_content}")
-        if core_memory.human_content:
-            core_text.append(f"[HUMAN]\n{core_memory.human_content}")
-        parts.append(f"\n<CORE_MEMORY>\n{chr(10).join(core_text)}\n</CORE_MEMORY>")
-    
-    # Recursive summary (if exists)
-    if recursive_summary:
-        parts.append(f"\n<CONVERSATION_SUMMARY>\n{recursive_summary}\n</CONVERSATION_SUMMARY>")
-    
-    # Semantic memories (if any)
-    if semantic_memories:
-        semantic_text = "\n\n".join([
-            f"[{mem.type.upper()}] {mem.content}\n"
-            f"  Keywords: {', '.join(mem.keywords[:5])}"
-            for mem in semantic_memories
-        ])
-        parts.append(f"\n<SEMANTIC_MEMORY>\n{semantic_text}\n</SEMANTIC_MEMORY>")
-    
-    return "\n".join(parts)
-```
+import asyncio
 
----
+# Inline (blocks)
+await session.add(user_msg, ai_response)
 
-### Message Flow Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Single Chat Turn                              │
-│                                                                  │
-│  USER MESSAGE                                                    │
-│       │                                                          │
-│       ▼                                                          │
-│  ┌─────────────┐                                                 │
-│  │ Get Session │                                                 │
-│  └─────┬───────┘                                                 │
-│        ▼                                                         │
-│  ┌─────────────────────────────────────────┐                     │
-│  │ Retrieve Context                         │                     │
-│  │  ├── Semantic memories (vector search)  │                     │
-│  │  ├── Core memory (MongoDB)              │                     │
-│  │  └── Recursive summary (in-memory)      │                     │
-│  └────────────────┬────────────────────────┘                     │
-│                   ▼                                              │
-│  ┌─────────────────────────────────────────┐                     │
-│  │ Build System Prompt                      │                     │
-│  │  <CORE_MEMORY>...</CORE_MEMORY>         │                     │
-│  │  <CONVERSATION_SUMMARY>...</...>        │                     │
-│  │  <SEMANTIC_MEMORY>...</SEMANTIC_MEMORY> │                     │
-│  └────────────────┬────────────────────────┘                     │
-│                   ▼                                              │
-│  ┌─────────────────────────────────────────┐                     │
-│  │ Call LLM                                 │                     │
-│  │  messages = [system, ...history, new]   │                     │
-│  └────────────────┬────────────────────────┘                     │
-│                   ▼                                              │
-│  ┌─────────────────────────────────────────┐                     │
-│  │ Persist Messages                         │                     │
-│  │  user message → MongoDB                  │                     │
-│  │  assistant message → MongoDB            │                     │
-│  └────────────────┬────────────────────────┘                     │
-│                   ▼                                              │
-│  ┌─────────────────────────────────────────┐                     │
-│  │ Check Window                             │                     │
-│  │  if count >= window: trigger pipeline   │                     │
-│  └────────────────┬────────────────────────┘                     │
-│                   ▼                                              │
-│  RETURN { response, retrieved_context }                          │
-└─────────────────────────────────────────────────────────────────┘
+# Background (non-blocking)
+asyncio.create_task(session.add(user_msg, ai_response))
 ```
 
 ---
@@ -2209,84 +2150,78 @@ This section provides visual representations of how data flows through the syste
 
 ---
 
-### Chat Message Flow
+### Per-Turn Message Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                     CHAT MESSAGE PROCESSING                                  │
+│                     PER-TURN LOOP (User Controlled)                          │
 │                                                                              │
 │  1. USER INPUT                                                               │
 │     │                                                                        │
 │     ▼                                                                        │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │ 2. RETRIEVE SESSION                                                   │   │
-│  │    sessions.get_session(session_id) → {user_id, block_id}            │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│     │                                                                        │
-│     ▼                                                                        │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │ 3. RETRIEVE CONTEXT                                                   │   │
+│  │ 2. RETRIEVE CONTEXT                                                   │   │
 │  │    ┌─────────────────────────────────────────────────────────────┐   │   │
-│  │    │ semantic.retrieve([query]) → [SemanticMemoryUnit, ...]     │   │   │
+│  │    │ context = await block.retrieve(user_msg)                    │   │   │
 │  │    │         │                                                   │   │   │
-│  │    │         ├── Ollama: embed query                            │   │   │
-│  │    │         └── Qdrant: vector search                          │   │   │
+│  │    │         ├── CoreMemoryService.get() → MongoDB              │   │   │
+│  │    │         └── SemanticMemoryService.retrieve() → Qdrant      │   │   │
 │  │    └─────────────────────────────────────────────────────────────┘   │   │
 │  │    ┌─────────────────────────────────────────────────────────────┐   │   │
-│  │    │ core.get(block_id) → CoreMemoryUnit                        │   │   │
+│  │    │ messages = await session.get_memory_window()                │   │   │
 │  │    │         │                                                   │   │   │
-│  │    │         └── MongoDB: find core_memories doc                │   │   │
+│  │    │         └── MongoDB: find session, return messages         │   │   │
 │  │    └─────────────────────────────────────────────────────────────┘   │   │
 │  │    ┌─────────────────────────────────────────────────────────────┐   │   │
-│  │    │ _summary_ref["summary"] → recursive summary (in-memory)    │   │   │
+│  │    │ summary = await session.get_recursive_summary()             │   │   │
+│  │    │         │                                                   │   │   │
+│  │    │         └── MongoDB: get session.recursive_summary         │   │   │
 │  │    └─────────────────────────────────────────────────────────────┘   │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │     │                                                                        │
 │     ▼                                                                        │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │ 4. BUILD SYSTEM PROMPT                                                │   │
-│  │    ASSISTANT_BASE_PROMPT                                              │   │
-│  │    + <CORE_MEMORY>...</CORE_MEMORY>                                   │   │
-│  │    + <CONVERSATION_SUMMARY>...</CONVERSATION_SUMMARY>                 │   │
-│  │    + <SEMANTIC_MEMORY>...</SEMANTIC_MEMORY>                           │   │
+│  │ 3. BUILD SYSTEM PROMPT (USER CONTROLS THIS)                          │   │
+│  │    system_prompt = "You are helpful.\n\n"                            │   │
+│  │    if summary: system_prompt += f"<Summary>{summary}</Summary>"      │   │
+│  │    if not context.is_empty():                                        │   │
+│  │        system_prompt += context.to_prompt_string()                   │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │     │                                                                        │
 │     ▼                                                                        │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │ 5. PERSIST USER MESSAGE                                               │   │
-│  │    sessions.add_message(session_id, "user", user_message)            │   │
-│  │         │                                                             │   │
-│  │         └── MongoDB: $push to sessions.messages                      │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│     │                                                                        │
-│     ▼                                                                        │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │ 6. CALL LLM                                                           │   │
-│  │    llm.chat([system_prompt, ...history, user_message])               │   │
+│  │ 4. CALL LLM (USER CONTROLS THIS)                                      │   │
+│  │    messages = [                                                       │   │
+│  │        {"role": "system", "content": system_prompt},                 │   │
+│  │        *memory_window,                                                │   │
+│  │        {"role": "user", "content": user_msg},                        │   │
+│  │    ]                                                                  │   │
+│  │    response = await client.llm.chat(messages=messages)               │   │
 │  │         │                                                             │   │
 │  │         └── Groq API: generate response                              │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │     │                                                                        │
 │     ▼                                                                        │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │ 7. PERSIST ASSISTANT MESSAGE                                          │   │
-│  │    sessions.add_message(session_id, "assistant", response)           │   │
+│  │ 5. PERSIST TURN                                                       │   │
+│  │    await session.add(user_msg=user_msg, ai_response=response)        │   │
 │  │         │                                                             │   │
-│  │         └── MongoDB: $push to sessions.messages                      │   │
+│  │         ├── MongoDB: $push user message                              │   │
+│  │         ├── MongoDB: $push assistant message                         │   │
+│  │         └── Check window count                                       │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │     │                                                                        │
 │     ▼                                                                        │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │ 8. CHECK WINDOW & TRIGGER PIPELINE                                    │   │
+│  │ 6. CHECK WINDOW & RUN PIPELINE                                        │   │
 │  │    if message_count >= memory_window:                                │   │
-│  │        pipeline.trigger(...)  ─────────────────────┐                 │   │
+│  │        new_summary = await pipeline.run(...)                         │   │
+│  │        await mongo.set_session_summary(session_id, new_summary)      │   │
+│  │        await mongo.trim_session_messages(session_id, keep_last_n)    │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
-│     │                                                │                       │
-│     ▼                                                ▼                       │
-│  ┌──────────────────────────────────────────┐  ┌─────────────────────────┐  │
-│  │ 9. RETURN RESPONSE                       │  │ BACKGROUND: PIPELINE    │  │
-│  │    { response, retrieved_context }       │  │ (runs in parallel)      │  │
-│  └──────────────────────────────────────────┘  └─────────────────────────┘  │
+│     │                                                                        │
+│     ▼                                                                        │
+│  NEXT TURN                                                                   │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -2607,7 +2542,7 @@ Stores the persistent persona and human facts for each block.
 
 #### Collection: `sessions`
 
-Stores chat sessions with full message history.
+Stores chat sessions with full message history and persisted summary.
 
 ```javascript
 {
@@ -2627,9 +2562,12 @@ Stores chat sessions with full message history.
       "content": "Hi there! How can I help?",
       "timestamp": "2024-01-15T10:01:05"
     }
-  ]
+  ],
+  "recursive_summary": "User discussed machine learning..."  // Persisted summary
 }
 ```
+
+**New field:** `recursive_summary` — persisted rolling summary. Survives process restarts (was previously in-memory only).
 
 **Indexes:**
 - `{ "session_id": 1 }` (unique) — for session lookups
@@ -2637,9 +2575,12 @@ Stores chat sessions with full message history.
 **Operations:**
 - `create_session` → `insert_one`
 - `get_session` → `find_one({ session_id })`
-- `update_session` → `update_one({ session_id }, { $set: ... })`
 - `add_message_to_session` → `update_one({ session_id }, { $push: { messages } })`
 - `get_session_messages` → `find_one({ session_id }, { messages: 1 })`
+- `get_session_message_count` → `find_one({ session_id }, { messages: 1 })`
+- `trim_session_messages` → `update_one({ session_id }, { $set: { messages: messages[-N:] } })`
+- `set_session_summary` → `update_one({ session_id }, { $set: { recursive_summary } })`
+- `get_session_summary` → `find_one({ session_id }, { recursive_summary: 1 })`
 - `clear_session_messages` → `update_one({ session_id }, { $set: { messages: [] } })`
 
 ---
@@ -2775,7 +2716,7 @@ qdrant.delete_vector(
 │     └── qdrant.store_vector(...)                                │
 │                                                                  │
 │  3. QUERY                                                        │
-│     ChatEngine retrieves context                                 │
+│     Block.retrieve() retrieves context                           │
 │     └── qdrant.retrieve_from_vector(...)                        │
 │                                                                  │
 │  4. UPDATE / DELETE                                              │
@@ -2810,15 +2751,17 @@ qdrant.delete_vector(
 
 This technical overview covered the complete architecture of the memBlocks library:
 
-1. **Architecture** — Layered design with dependency injection
+1. **Architecture** — Layered design with dependency injection, flat client API
 2. **Configuration** — Environment-driven settings via Pydantic
 3. **Data Models** — Pure Pydantic models for all data structures
 4. **Storage Layer** — MongoDB, Qdrant, and Ollama adapters
 5. **LLM Interface** — Abstract provider with Groq implementation
 6. **Memory Pipeline** — PS1, PS2, core memory, and summary generation
-7. **Chat Engine** — Conversation handling with memory integration
+7. **Per-Turn Loop** — Block/Session objects for retrieval and persistence (user controls LLM)
 8. **Transparency** — Built-in logging and event publishing
 9. **Data Flow** — Visual diagrams of data movement
 10. **Schemas** — MongoDB and Qdrant collection structures
+
+**Key Design Change:** The library is now a **memory management** library, not an inference engine. Users control their own LLM calls using `Block` and `Session` objects.
 
 For implementation details, refer to the source code in `memblocks_lib/src/memblocks/`.
