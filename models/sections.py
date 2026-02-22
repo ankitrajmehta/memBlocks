@@ -12,7 +12,7 @@ from typing import Literal, Optional, Any, List, Dict
 from concurrent.futures import ThreadPoolExecutor
 from vector_db.vector_db_manager import VectorDBManager
 from vector_db.mongo_manager import mongo_manager
-from llm.llm_manager import llm_manager
+from llm.llm_manager import llm_manager as global_llm_manager
 from llm.output_models import SemanticMemoriesOutput, CoreMemoryOutput
 import asyncio
 from datetime import datetime
@@ -54,6 +54,7 @@ class SemanticMemorySection(BaseModel):
         self,
         messages: List[Dict[str, str]],
         ps1_prompt: str = PS1_SEMANTIC_PROMPT,
+        llm_provider=None,
     ) -> List[SemanticMemoryUnit]:
         """
         PS1: Extract structured semantic memories from conversation using LangChain.
@@ -82,7 +83,8 @@ Extract structured semantic memories. Analyze each significant piece of informat
 
         try:
             # Create LangChain structured output chain
-            chain = llm_manager.create_structured_chain(
+            llm = llm_provider or global_llm_manager
+            chain = llm.create_structured_chain(
                 system_prompt=ps1_prompt,
                 pydantic_model=SemanticMemoriesOutput,
                 temperature=settings.llm_semantic_extraction_temperature,
@@ -127,6 +129,7 @@ Entities: {", ".join(memory_item.entities)}""".strip()
         messages: List[Dict[str, str]],
         ps1_prompt: str = PS1_SEMANTIC_PROMPT,
         min_confidence: float = 0.0,
+        llm_provider=None,
     ) -> List[SemanticMemoryUnit]:
         """
         Convenience method: Extract AND store semantic memories in one call.
@@ -144,7 +147,7 @@ Entities: {", ".join(memory_item.entities)}""".strip()
         """
 
         # Extract memories
-        memories = await self.extract_semantic_memories(messages, ps1_prompt)
+        memories = await self.extract_semantic_memories(messages, ps1_prompt, llm_provider=llm_provider)
 
         # Filter by confidence if needed
         if min_confidence > 0.0:
@@ -152,7 +155,7 @@ Entities: {", ".join(memory_item.entities)}""".strip()
 
         # Store all filtered memories
         for memory in memories:
-            await self.store_memory(memory)
+            await self.store_memory(memory, llm_provider=llm_provider)
 
         return memories
 
@@ -160,9 +163,7 @@ Entities: {", ".join(memory_item.entities)}""".strip()
     # STORAGE - Uses enriched embedding_text
     # ========================================================================
 
-    async def store_memory(
-        self, memory_unit: SemanticMemoryUnit
-    ) -> List[MemoryOperation]:
+    async def store_memory(self, memory_unit: SemanticMemoryUnit, llm_provider=None) -> bool:
         """Store a memory with conflict resolution (PS2).
 
         PS2 Enhancement:
@@ -222,7 +223,9 @@ Entities: {", ".join(memory_item.entities)}""".strip()
             return operations
 
         try:
-            chain = llm_manager.create_structured_chain(
+            # Create structured chain
+            llm = llm_provider or global_llm_manager
+            chain = llm.create_structured_chain(
                 system_prompt=PS2_MEMORY_UPDATE_PROMPT,
                 pydantic_model=PS2MemoryUpdateOutput,
                 temperature=settings.llm_memory_update_temperature,
@@ -424,6 +427,7 @@ class CoreMemorySection(BaseModel):
         messages: List[Dict[str, str]],
         old_core_memory: Optional[CoreMemoryUnit] = None,
         core_creation_prompt: str = CORE_MEMORY_PROMPT,
+        llm_provider=None,
     ) -> CoreMemoryUnit:
         """
         Create updated CoreMemoryUnit from conversation messages and old core memory.
@@ -458,7 +462,8 @@ Generate updated core memory paragraphs that incorporate new stable facts."""
 
         try:
             # Create LangChain structured output chain
-            chain = llm_manager.create_structured_chain(
+            llm = llm_provider or global_llm_manager
+            chain = llm.create_structured_chain(
                 system_prompt=core_creation_prompt,
                 pydantic_model=CoreMemoryOutput,
                 temperature=settings.llm_core_extraction_temperature,
@@ -479,7 +484,7 @@ Generate updated core memory paragraphs that incorporate new stable facts."""
                 return old_core_memory
             return CoreMemoryUnit(persona_content="", human_content="")
 
-    async def store_memory(self, memory_unit: CoreMemoryUnit) -> bool:
+    async def store_memory(self, memory_unit: CoreMemoryUnit, db_provider=None) -> bool:
         """
         Store CoreMemoryUnit in MongoDB, replacing previous version.
 
@@ -490,7 +495,8 @@ Generate updated core memory paragraphs that incorporate new stable facts."""
             bool: True if storage was successful
         """
         try:
-            await mongo_manager.save_core_memory(
+            db = db_provider or mongo_manager
+            await db.save_core_memory(
                 block_id=self.block_id,
                 persona_content=memory_unit.persona_content,
                 human_content=memory_unit.human_content,
@@ -500,7 +506,7 @@ Generate updated core memory paragraphs that incorporate new stable facts."""
             print(f"⚠️ Failed to store core memory: {e}")
             return False
 
-    async def get_memories(self) -> Optional[CoreMemoryUnit]:
+    async def get_memories(self, db_provider=None) -> Optional[CoreMemoryUnit]:
         """
         Retrieve core memory from MongoDB.
 
@@ -510,7 +516,8 @@ Generate updated core memory paragraphs that incorporate new stable facts."""
             CoreMemoryUnit instance or None if not found
         """
         try:
-            doc = await mongo_manager.get_core_memory(self.block_id)
+            db = db_provider or mongo_manager
+            doc = await db.get_core_memory(self.block_id)
             if doc:
                 return CoreMemoryUnit(
                     persona_content=doc.get("persona_content", ""),
