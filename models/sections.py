@@ -6,6 +6,7 @@ from models.units import (
     CoreMemoryUnit,
     ResourceMemoryUnit,
     MemoryUnitMetaData,
+    MemoryOperation,
 )
 from typing import Literal, Optional, Any, List, Dict
 from concurrent.futures import ThreadPoolExecutor
@@ -159,7 +160,9 @@ Entities: {", ".join(memory_item.entities)}""".strip()
     # STORAGE - Uses enriched embedding_text
     # ========================================================================
 
-    async def store_memory(self, memory_unit: SemanticMemoryUnit) -> bool:
+    async def store_memory(
+        self, memory_unit: SemanticMemoryUnit
+    ) -> List[MemoryOperation]:
         """Store a memory with conflict resolution (PS2).
 
         PS2 Enhancement:
@@ -171,13 +174,13 @@ Entities: {", ".join(memory_item.entities)}""".strip()
             memory_unit: The new memory unit to store
 
         Returns:
-            bool: True if operations completed successfully
+            List of MemoryOperation objects representing what was done
         """
 
         embedder = VectorDBManager.get_embedder()
         current_time = datetime.now().isoformat()
+        operations: List[MemoryOperation] = []
 
-        # Step 1: Embed the new memory for similarity search
         text_to_embed = (
             memory_unit.embedding_text
             if memory_unit.embedding_text
@@ -185,32 +188,25 @@ Entities: {", ".join(memory_item.entities)}""".strip()
         )
         new_memory_vector = embedder.embed_text(text_to_embed)
 
-        # Step 2: Retrieve top-k similar existing memories
         similar_results = VectorDBManager.retrieve_from_vector(
             self.collection_name, new_memory_vector, top_k=5
         )
 
-        # Step 3: Format inputs for PS2 prompt
         new_memory_dict = memory_unit.model_dump()
         new_memory_dict["updated_at"] = current_time
 
-        # Build existing memories list and create ID mapping (int -> real Qdrant ID)
-        # This prevents LLM hallucination with long UUIDs
         existing_memories_list = []
-        id_mapping = {}  # Maps simple int ID to real Qdrant point ID
+        id_mapping = {}
+        existing_contents = {}
 
         for idx, point in enumerate(similar_results):
             if isinstance(point, ScoredPoint):
-                # Use simple integer ID for LLM
                 simple_id = str(idx)
-                # Map back to real Qdrant ID
                 id_mapping[simple_id] = point.id
-
-                # Ensure simple ID takes priority over any 'id' in payload
                 existing_mem = {**point.payload, "id": simple_id}
                 existing_memories_list.append(existing_mem)
+                existing_contents[simple_id] = point.payload.get("content", "")
 
-        # If no similar memories exist, just ADD directly
         if not existing_memories_list:
             payload = memory_unit.model_dump()
             success = VectorDBManager.store_vector(
@@ -220,11 +216,12 @@ Entities: {", ".join(memory_item.entities)}""".strip()
                 print(
                     f"✓ Added new memory (no similar existing): {memory_unit.content[:60]}..."
                 )
-            return success
+                operations.append(
+                    MemoryOperation(operation="ADD", content=memory_unit.content)
+                )
+            return operations
 
-        # Step 4: Call PS2 LLM for conflict resolution
         try:
-            # Create structured chain
             chain = llm_manager.create_structured_chain(
                 system_prompt=PS2_MEMORY_UPDATE_PROMPT,
                 pydantic_model=PS2MemoryUpdateOutput,
@@ -243,17 +240,19 @@ Entities: {", ".join(memory_item.entities)}""".strip()
 
         except Exception as e:
             print(f"⚠️ PS2 conflict resolution failed: {e}")
-            # Fallback: Just ADD the memory without conflict resolution
             print(f"   Fallback: Adding memory without conflict check")
             payload = memory_unit.model_dump()
-            return VectorDBManager.store_vector(
+            success = VectorDBManager.store_vector(
                 self.collection_name, new_memory_vector, payload
             )
+            if success:
+                operations.append(
+                    MemoryOperation(operation="ADD", content=memory_unit.content)
+                )
+            return operations
 
-        # Step 5: Execute operations based on LLM decisions
         operations_performed = []
 
-        # 5a. Handle new memory operation
         if result.new_memory_operation.operation == "ADD":
             payload = memory_unit.model_dump()
             success = VectorDBManager.store_vector(
@@ -262,25 +261,27 @@ Entities: {", ".join(memory_item.entities)}""".strip()
             if success:
                 operations_performed.append("ADD new memory")
                 print(f"✓ Added new memory: {memory_unit.content[:60]}...")
+                operations.append(
+                    MemoryOperation(operation="ADD", content=memory_unit.content)
+                )
         else:
             operations_performed.append(
                 f"NONE (new): {result.new_memory_operation.reason or 'Redundant'}"
             )
             print(f" Skipped new memory (redundant)")
+            operations.append(
+                MemoryOperation(operation="NONE", content=memory_unit.content)
+            )
 
-        # 5b. Handle existing memory operations
         for op in result.existing_memory_operations:
-            # Map simple ID back to real Qdrant point ID
             real_id = id_mapping.get(op.id)
             if not real_id:
                 print(f" Warning: Could not map ID {op.id} to real Qdrant ID, skipping")
                 continue
 
             if op.operation == "UPDATE":
-                # Update the ID in the updated_memory dict to real Qdrant ID
                 op.updated_memory["id"] = real_id
 
-                # Re-embed the updated memory content
                 updated_unit = SemanticMemoryUnit(**op.updated_memory)
                 updated_text = (
                     updated_unit.embedding_text
@@ -289,12 +290,12 @@ Entities: {", ".join(memory_item.entities)}""".strip()
                 )
                 updated_vector = embedder.embed_text(updated_text)
 
-                # Remove 'id' from payload since Qdrant stores it separately
                 payload_without_id = {
                     k: v for k, v in op.updated_memory.items() if k != "id"
                 }
 
-                # Upsert with real Qdrant ID
+                old_content = existing_contents.get(op.id, "")
+
                 success = VectorDBManager.store_vector(
                     self.collection_name,
                     updated_vector,
@@ -306,18 +307,32 @@ Entities: {", ".join(memory_item.entities)}""".strip()
                     print(
                         f"Updated memory {real_id[:8]}...: {updated_unit.content[:60]}..."
                     )
+                    operations.append(
+                        MemoryOperation(
+                            operation="UPDATE",
+                            memory_id=real_id,
+                            content=updated_unit.content,
+                            old_content=old_content,
+                        )
+                    )
 
             elif op.operation == "DELETE":
+                old_content = existing_contents.get(op.id, "")
                 success = VectorDBManager.delete_vector(self.collection_name, real_id)
                 if success:
                     operations_performed.append(f"DELETE {real_id[:8]}...")
                     print(f"Deleted memory {real_id[:8]}...")
+                    operations.append(
+                        MemoryOperation(
+                            operation="DELETE", memory_id=real_id, content=old_content
+                        )
+                    )
 
-            else:  # NONE
+            else:
                 operations_performed.append(f"NONE {real_id[:8]}...")
 
         print(f"   Operations: {', '.join(operations_performed)}")
-        return True
+        return operations
 
     # ========================================================================
     # RETRIEVAL

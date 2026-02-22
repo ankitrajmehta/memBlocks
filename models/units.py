@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Literal, Optional, List
 
 
 class MemoryUnitMetaData(BaseModel):
@@ -121,4 +121,36 @@ class ResourceMemoryUnit(BaseModel):
     ] = Field(..., description="Type of the resource memory.")
     resource_link: Optional[str] = Field(
         None, description="Link or path or message_ids to the resource if applicable."
+    )
+
+
+class MemoryOperation(BaseModel):
+    """Represents a single memory operation during processing."""
+
+    operation: Literal["ADD", "UPDATE", "DELETE", "NONE"] = Field(
+        ..., description="Type of operation performed"
+    )
+    memory_id: Optional[str] = Field(
+        None, description="Qdrant point ID (if applicable)"
+    )
+    content: str = Field(..., description="The memory content")
+    old_content: Optional[str] = Field(
+        None, description="Previous content (for UPDATE operations)"
+    )
+
+
+class ProcessingEvent(BaseModel):
+    """Represents a complete memory processing event."""
+
+    event_id: str = Field(
+        ..., description="Unique identifier for this processing event"
+    )
+    timestamp: str = Field(
+        ..., description="ISO 8601 timestamp when processing occurred"
+    )
+    messages_processed: int = Field(
+        ..., description="Number of messages that triggered this processing"
+    )
+    operations: List[MemoryOperation] = Field(
+        default_factory=list, description="List of memory operations performed"
     )

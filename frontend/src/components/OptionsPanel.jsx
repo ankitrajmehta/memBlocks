@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, Fragment } from 'react';
 import UserSelector from './UserSelector';
 import BlockSelector from './BlockSelector';
 import MemoryViewer from './MemoryViewer';
 import SummaryViewer from './SummaryViewer';
+import ProcessingHistoryViewer from './ProcessingHistoryViewer';
 import * as api from '../api/client';
 
 /**
@@ -24,6 +25,7 @@ const OptionsPanel = ({
   // Modal states
   const [showMemoryViewer, setShowMemoryViewer] = useState(false);
   const [showSummaryViewer, setShowSummaryViewer] = useState(false);
+  const [showProcessingHistory, setShowProcessingHistory] = useState(false);
 
   const handleStartSession = async () => {
     if (!currentUser || !currentBlock) {
@@ -66,22 +68,34 @@ const OptionsPanel = ({
     setShowSummaryViewer(true);
   };
 
+  const handleViewProcessingHistory = () => {
+    if (!sessionId) {
+      setError('No active session');
+      return;
+    }
+    setShowProcessingHistory(true);
+  };
+
   return (
-    <div className="h-full overflow-y-auto p-6 bg-gray-50">
-      <h1 className="text-2xl font-bold mb-6 text-gray-800">⚙️ Control Panel</h1>
+    <>
+    <div className="h-full flex flex-col bg-gray-50 rounded-lg shadow-md overflow-hidden">
+      <div className="flex-none p-6 border-b border-gray-200">
+        <h1 className="text-2xl font-bold text-gray-800">⚙️ Control Panel</h1>
+      </div>
 
-      {/* User Selection */}
-      <UserSelector 
-        currentUser={currentUser} 
-        onUserSelect={onUserSelect} 
-      />
+      <div className="flex-1 overflow-y-auto p-6 min-h-0">
+        {/* User Selection */}
+        <UserSelector 
+          currentUser={currentUser} 
+          onUserSelect={onUserSelect} 
+        />
 
-      {/* Block Selection */}
-      <BlockSelector 
-        currentUser={currentUser}
-        currentBlock={currentBlock}
-        onBlockSelect={onBlockSelect}
-      />
+        {/* Block Selection */}
+        <BlockSelector 
+          currentUser={currentUser}
+          currentBlock={currentBlock}
+          onBlockSelect={onBlockSelect}
+        />
 
       {/* Actions Section */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-4">
@@ -130,9 +144,18 @@ const OptionsPanel = ({
         <button
           onClick={handleViewSummary}
           disabled={!currentBlock}
-          className="w-full px-4 py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-all font-medium shadow-md"
+          className="w-full px-4 py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-all font-medium mb-3 shadow-md"
         >
           📚 View Recursive Summary
+        </button>
+
+        {/* View Processing History Button */}
+        <button
+          onClick={handleViewProcessingHistory}
+          disabled={!sessionId}
+          className="w-full px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-all font-medium shadow-md"
+        >
+          ⚙️ View Processing History
         </button>
       </div>
 
@@ -171,20 +194,28 @@ const OptionsPanel = ({
           )}
         </div>
       </div>
-
-      {/* Modals */}
-      <MemoryViewer
-        blockId={currentBlock?.meta_data?.id}
-        isOpen={showMemoryViewer}
-        onClose={() => setShowMemoryViewer(false)}
-      />
-
-      <SummaryViewer
-        blockId={currentBlock?.meta_data?.id}
-        isOpen={showSummaryViewer}
-        onClose={() => setShowSummaryViewer(false)}
-      />
     </div>
+  </div>
+
+    {/* Modals - rendered outside the panel */}
+    <MemoryViewer
+      blockId={currentBlock?.meta_data?.id}
+      isOpen={showMemoryViewer}
+      onClose={() => setShowMemoryViewer(false)}
+    />
+
+    <SummaryViewer
+      blockId={currentBlock?.meta_data?.id}
+      isOpen={showSummaryViewer}
+      onClose={() => setShowSummaryViewer(false)}
+    />
+
+    <ProcessingHistoryViewer
+      sessionId={sessionId}
+      isOpen={showProcessingHistory}
+      onClose={() => setShowProcessingHistory(false)}
+    />
+  </>
   );
 };
 

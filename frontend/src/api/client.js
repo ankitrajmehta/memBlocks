@@ -148,6 +148,16 @@ export const getChatHistory = async (sessionId) => {
   return response.data.data;
 };
 
+/**
+ * Get processing history for a session
+ * @param {string} sessionId - Session identifier
+ * @returns {Promise<Object>} Processing history with events array
+ */
+export const getProcessingHistory = async (sessionId) => {
+  const response = await apiClient.get(`/chat/sessions/${sessionId}/processing-history`);
+  return response.data.data;
+};
+
 // ==================== MEMORY ====================
 
 /**
@@ -215,6 +225,7 @@ export default {
   startSession,
   sendMessage,
   getChatHistory,
+  getProcessingHistory,
   
   // Memory
   getCoreMemory,

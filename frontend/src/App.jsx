@@ -43,9 +43,9 @@ function App() {
       </header>
 
       {/* Main Content - Split View */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 overflow-hidden">
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 overflow-hidden min-h-0">
         {/* Left Half - Chat Panel */}
-        <div className="h-full">
+        <div className="min-h-0">
           <ChatPanel
             sessionId={sessionId}
             currentUser={currentUser}
@@ -54,7 +54,7 @@ function App() {
         </div>
 
         {/* Right Half - Options Panel */}
-        <div className="h-full overflow-hidden">
+        <div className="min-h-0">
           <OptionsPanel
             currentUser={currentUser}
             currentBlock={currentBlock}

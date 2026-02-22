@@ -1,13 +1,18 @@
 """Chat service with memory integration and optimized background processing."""
 
 import asyncio
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Any
 from datetime import datetime
 from enum import Enum
 
 from config import settings
 from models.container import MemoryBlock
-from models.units import SemanticMemoryUnit, CoreMemoryUnit
+from models.units import (
+    SemanticMemoryUnit,
+    CoreMemoryUnit,
+    ProcessingEvent,
+    MemoryOperation,
+)
 from llm.llm_manager import llm_manager
 from llm.output_models import SummaryOutput
 from prompts import SUMMARY_SYSTEM_PROMPT, ASSISTANT_BASE_PROMPT
@@ -112,6 +117,29 @@ class BackgroundTaskTracker:
                 print(f"⚠️ Timeout waiting for {len(running_tasks)} background tasks")
 
 
+class ProcessingHistoryTracker:
+    """Track memory processing events for the session."""
+
+    def __init__(self):
+        self.events: List[ProcessingEvent] = []
+        self._lock = asyncio.Lock()
+
+    async def add_event(self, event: ProcessingEvent):
+        """Add a new processing event."""
+        async with self._lock:
+            self.events.append(event)
+
+    async def get_events(self) -> List[ProcessingEvent]:
+        """Get all processing events."""
+        async with self._lock:
+            return self.events.copy()
+
+    async def clear(self):
+        """Clear all events."""
+        async with self._lock:
+            self.events.clear()
+
+
 class ChatService:
     """
     Chat service with memory augmentation and optimized background processing.
@@ -151,6 +179,7 @@ class ChatService:
 
         # Background task management
         self.task_tracker = BackgroundTaskTracker()
+        self.processing_history = ProcessingHistoryTracker()
         self._processing_semaphore = asyncio.Semaphore(max_concurrent_processing)
         self._processing_lock = (
             asyncio.Lock()
@@ -178,7 +207,6 @@ class ChatService:
         """
         async with self._processing_semaphore:
             async with self._processing_lock:
-                # Snapshot current history before processing
                 messages_to_process = self.message_history.copy()
 
             if not messages_to_process:
@@ -187,7 +215,8 @@ class ChatService:
             print(f"🔄 MEMORY PIPELINE START (Task: {task_id[:12]}...)")
             print(f"   Processing {len(messages_to_process)} messages...")
 
-            # STEP 1: Extract semantic memories
+            all_operations: List[MemoryOperation] = []
+
             if self.memory_block.semantic_memories:
                 print(f"   → STEP 1: Semantic Extraction...")
                 semantic_memories = (
@@ -197,12 +226,14 @@ class ChatService:
                 )
                 print(f"   ✓ Extracted {len(semantic_memories)} semantic memories")
 
-                # Store memories
                 for mem in semantic_memories:
-                    await self.memory_block.semantic_memories.store_memory(mem)
+                    operations = await self.memory_block.semantic_memories.store_memory(
+                        mem
+                    )
+                    if operations:
+                        all_operations.extend(operations)
                 print(f"   ✓ Stored {len(semantic_memories)} memories")
 
-            # STEP 2: Extract and update core memory
             if self.memory_block.core_memories:
                 print(f"   → STEP 2: Core Memory Update...")
                 old_core = await self.memory_block.core_memories.get_memories()
@@ -211,11 +242,9 @@ class ChatService:
                     messages=messages_to_process, old_core_memory=old_core
                 )
 
-                # Store updated core memory
                 await self.memory_block.core_memories.store_memory(new_core)
                 print(f"   ✓ Updated core memory")
 
-            # STEP 3: Generate recursive summary
             print(f"   → STEP 3: Recursive Summary...")
             new_summary = await self._generate_recursive_summary(messages_to_process)
 
@@ -223,14 +252,24 @@ class ChatService:
                 self.recursive_summary = new_summary
             print(f"   ✓ Summary updated")
 
-            # STEP 4: Flush history
             print(f"   → STEP 4: Flushing History...")
             async with self._processing_lock:
                 old_len = len(self.message_history)
                 self.message_history = self.message_history[-self.keep_last_n :]
                 print(f"   ✓ Flushed history ({old_len} → {len(self.message_history)})")
 
-            # Update metrics
+            if all_operations:
+                event = ProcessingEvent(
+                    event_id=f"evt_{uuid.uuid4().hex[:12]}",
+                    timestamp=datetime.now().isoformat(),
+                    messages_processed=len(messages_to_process),
+                    operations=all_operations,
+                )
+                await self.processing_history.add_event(event)
+                print(
+                    f"   ✓ Recorded processing event with {len(all_operations)} operations"
+                )
+
             self.metrics["memory_windows_processed"] += 1
             self.metrics["last_processing_time"] = datetime.now()
 
@@ -377,7 +416,7 @@ class ChatService:
     # CHAT INTERFACE
     # ========================================================================
 
-    async def send_message(self, user_message: str) -> str:
+    async def send_message(self, user_message: str) -> Dict[str, Any]:
         """
         Process user message and generate response.
 
@@ -385,31 +424,26 @@ class ChatService:
             user_message: User's input
 
         Returns:
-            Assistant's response
+            Dict with 'response' and 'retrieved_context' keys
         """
         print(f"\n{'─' * 70}")
         print(f"💬 Processing message...")
         print(f"{'─' * 70}")
 
-        # Retrieve memories
         print(f"🔍 Retrieving memories...")
         semantic_memories = self._retrieve_semantic_memories(user_message, top_k=5)
         core_memory = await self._get_core_memory()
         print(f"   📚 Semantic: {len(semantic_memories)} memories")
         print(f"   🧠 Core: {'Yes' if core_memory else 'No'}")
 
-        # Build system prompt
         system_prompt = await self._build_system_prompt(semantic_memories, core_memory)
 
-        # Add user message to history
         self.message_history.append({"role": "user", "content": user_message})
         self.metrics["total_messages"] += 1
 
-        # Build messages for LLM
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(self.message_history)
 
-        # Get response using LangChain
         try:
             llm = llm_manager.get_chat_llm(temperature=settings.llm_convo_temperature)
             response = await llm.ainvoke(messages)
@@ -420,19 +454,27 @@ class ChatService:
                 "I apologize, but I encountered an error processing your message."
             )
 
-        # Add assistant response to history
         self.message_history.append(
             {"role": "assistant", "content": assistant_response}
         )
 
-        # Process memory window if threshold reached
         if len(self.message_history) >= self.memory_window:
             print(
                 f"\n🔄 Memory window threshold reached, triggering background processing..."
             )
             self._trigger_memory_processing()
 
-        return assistant_response
+        retrieved_context = [
+            {
+                "content": mem.content,
+                "type": mem.type,
+                "confidence": mem.confidence,
+                "keywords": mem.keywords[:5] if mem.keywords else [],
+            }
+            for mem in semantic_memories
+        ]
+
+        return {"response": assistant_response, "retrieved_context": retrieved_context}
 
     # ========================================================================
     # UTILITIES & MANAGEMENT

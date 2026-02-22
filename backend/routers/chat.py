@@ -93,10 +93,9 @@ async def send_message(request: SendMessageRequest) -> Dict[str, Any]:
         request: Message request with session_id and message
 
     Returns:
-        AI response and conversation metadata
+        AI response, retrieved context, and conversation metadata
     """
     try:
-        # Get ChatService instance
         try:
             chat_service = get_chat_service(request.session_id)
         except KeyError:
@@ -105,15 +104,15 @@ async def send_message(request: SendMessageRequest) -> Dict[str, Any]:
                 detail=f"Session {request.session_id} not found or expired",
             )
 
-        # Process message through ChatService
-        response = await chat_service.send_message(request.message)
+        result = await chat_service.send_message(request.message)
 
         return {
             "success": True,
             "data": {
                 "session_id": request.session_id,
                 "user_message": request.message,
-                "ai_response": response,
+                "ai_response": result["response"],
+                "retrieved_context": result.get("retrieved_context", []),
                 "message_count": len(chat_service.message_history),
             },
         }
@@ -225,4 +224,42 @@ async def list_active_sessions() -> Dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to list sessions: {str(e)}",
+        )
+
+
+@router.get("/sessions/{session_id}/processing-history")
+async def get_processing_history(session_id: str) -> Dict[str, Any]:
+    """
+    Get memory processing history for a session.
+
+    Args:
+        session_id: Session identifier
+
+    Returns:
+        List of processing events with memory operations
+    """
+    try:
+        try:
+            chat_service = get_chat_service(session_id)
+        except KeyError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session {session_id} not found",
+            )
+
+        events = await chat_service.processing_history.get_events()
+        return {
+            "success": True,
+            "data": {
+                "events": [event.model_dump() for event in events],
+                "total_events": len(events),
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to get processing history for session %s", session_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get processing history: {str(e)}",
         )
