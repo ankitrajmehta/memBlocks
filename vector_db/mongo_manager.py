@@ -2,6 +2,7 @@
 
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import settings
 
@@ -22,6 +23,20 @@ class MongoDBManager:
         if self._client is None:
             self._initialize_client()
     
+    @staticmethod
+    def _serialize_doc(doc: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Convert ObjectId fields to strings so documents are JSON-serializable."""
+        if doc is None:
+            return None
+        doc = dict(doc)
+        if "_id" in doc:
+            doc["id"] = str(doc.pop("_id"))
+        # Recursively convert any remaining ObjectId values
+        for key, value in doc.items():
+            if isinstance(value, ObjectId):
+                doc[key] = str(value)
+        return doc
+
     def _initialize_client(self):
         """Initialize MongoDB async client."""
         connection_string = settings.mongodb_connection_string
@@ -58,7 +73,9 @@ class MongoDBManager:
             "metadata": metadata or {}
         }
         
-        await self.users.insert_one(user_doc)
+        result = await self.users.insert_one(user_doc)
+        user_doc["id"] = str(result.inserted_id)
+        user_doc.pop("_id", None)
         return user_doc
     
     async def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -71,7 +88,8 @@ class MongoDBManager:
         Returns:
             User document or None
         """
-        return await self.users.find_one({"user_id": user_id})
+        doc = await self.users.find_one({"user_id": user_id})
+        return self._serialize_doc(doc)
     
     async def add_block_to_user(self, user_id: str, block_id: str) -> bool:
         """
@@ -93,7 +111,8 @@ class MongoDBManager:
     async def list_users(self) -> List[Dict[str, Any]]:
         """Get all users."""
         cursor = self.users.find({})
-        return await cursor.to_list(length=None)
+        docs = await cursor.to_list(length=None)
+        return [self._serialize_doc(doc) for doc in docs]
     
     # ========================================================================
     # BLOCK OPERATIONS
@@ -132,7 +151,8 @@ class MongoDBManager:
         Returns:
             Block document or None
         """
-        return await self.blocks.find_one({"meta_data.id": block_id})
+        doc = await self.blocks.find_one({"meta_data.id": block_id})
+        return self._serialize_doc(doc)
     
     async def list_user_blocks(self, user_id: str) -> List[Dict[str, Any]]:
         """
@@ -149,7 +169,8 @@ class MongoDBManager:
             return []
         
         cursor = self.blocks.find({"meta_data.id": {"$in": user["block_ids"]}})
-        return await cursor.to_list(length=None)
+        docs = await cursor.to_list(length=None)
+        return [self._serialize_doc(doc) for doc in docs]
     
     async def delete_block(self, block_id: str) -> bool:
         """
@@ -216,7 +237,8 @@ class MongoDBManager:
         Returns:
             Core memory document or None
         """
-        return await self.core_memories.find_one({"block_id": block_id})
+        doc = await self.core_memories.find_one({"block_id": block_id})
+        return self._serialize_doc(doc)
     
     async def delete_core_memory(self, block_id: str) -> bool:
         """

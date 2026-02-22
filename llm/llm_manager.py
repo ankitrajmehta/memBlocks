@@ -6,15 +6,17 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
 # For instrumentation (using arize. accessible at https://app.arize.com/)
-from openinference.instrumentation.langchain import LangChainInstrumentor
-from arize.otel import register
-from getpass import getpass
-tracer_provider = register(
-    space_id=settings.arize_space_id,
-    api_key=settings.arize_api_key,
-    project_name=settings.arize_project_name,
-)
-LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+if settings.arize_space_id and settings.arize_api_key:
+    from openinference.instrumentation.langchain import LangChainInstrumentor
+    from arize.otel import register
+    tracer_provider = register(
+        space_id=settings.arize_space_id,
+        api_key=settings.arize_api_key,
+        project_name=settings.arize_project_name,
+    )
+    LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+else:
+    print("⚠️  Arize monitoring disabled (ARIZE_SPACE_ID / ARIZE_API_KEY not set)")
      
 
 class LLMManager:
