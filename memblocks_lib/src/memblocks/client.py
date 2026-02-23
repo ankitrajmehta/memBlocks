@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from memblocks.config import MemBlocksConfig
 from memblocks.llm.groq_provider import GroqLLMProvider
+from memblocks.llm.gemini_provider import GeminiLLMProvider
 from memblocks.storage.embeddings import EmbeddingProvider
 from memblocks.storage.mongo import MongoDBAdapter
 from memblocks.storage.qdrant import QdrantAdapter
@@ -108,8 +109,11 @@ class MemBlocksClient:
         if self.config.llm_provider_name == "groq":
             llm_provider = GroqLLMProvider(config)
         elif self.config.llm_provider_name == "gemini":
-            raise NotImplementedError(
-                "Custom LLM provider not implemented yet. Please use 'groq' or implement your own and pass it in the constructor."
+            llm_provider = GeminiLLMProvider(config)
+        else:
+            raise ValueError(
+                f"Unknown LLM provider: {self.config.llm_provider_name}. "
+                "Supported providers: 'groq', 'gemini'"
             )
 
         self.llm: "LLMProvider" = llm_provider
