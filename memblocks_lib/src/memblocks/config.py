@@ -26,13 +26,18 @@ class MemBlocksConfig(BaseSettings):
     """
 
     # -------------------------------------------------------------------------
-    # LLM (Groq)
+    # LLM Configuration
     # -------------------------------------------------------------------------
     llm_provider_name: str = Field(
-        "groq", validation_alias="LLM_PROVIDER_NAME", description="LLM provider to use (e.g. 'groq')"
-    ) #TODO: support multiple providers in the future, not just Groq — this field is a starting point for that.
+        "groq", validation_alias="LLM_PROVIDER_NAME", description="LLM provider to use (e.g. 'groq', 'gemini')"
+    )
     
+    # Groq API
     groq_api_key: Optional[str] = Field(None, validation_alias="GROQ_API_KEY")
+    
+    # Google Gemini API
+    gemini_api_key: Optional[str] = Field(None, validation_alias="GEMINI_API_KEY")
+    
     llm_model: str = Field(
         "meta-llama/llama-4-maverick-17b-128e-instruct",
         validation_alias="LLM_MODEL",
