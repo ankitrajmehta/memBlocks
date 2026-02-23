@@ -6,6 +6,11 @@ from typing import Any, Dict, Optional
 from memblocks import MemBlocksClient, MemBlocksConfig
 
 
+async def ainput(prompt: str = "") -> str:
+    """Non-blocking input using asyncio.to_thread (requires Python 3.9+)."""
+    return await asyncio.to_thread(input, prompt)
+
+
 async def _run_cli() -> None:
     """Main async CLI loop."""
     config = MemBlocksConfig()
@@ -16,7 +21,7 @@ async def _run_cli() -> None:
     print("=" * 60)
 
     # ---- user setup ----
-    user_id = input("\nEnter user ID (or press Enter for 'default_user'): ").strip()
+    user_id = (await ainput("\nEnter user ID (or press Enter for 'default_user'): ")).strip()
     if not user_id:
         user_id = "default_user"
 
@@ -32,15 +37,15 @@ async def _run_cli() -> None:
         for i, b in enumerate(blocks, 1):
             print(f"  {i}. {b.name} ({b.id})")
 
-        choice = input("\nSelect block number, or press Enter to create new: ").strip()
+        choice = (await ainput("\nSelect block number, or press Enter to create new: ")).strip()
         if choice.isdigit():
             idx = int(choice) - 1
             if 0 <= idx < len(blocks):
                 block = blocks[idx]
 
     if not block:
-        name = input("New block name (Enter for 'My Memory'): ").strip() or "My Memory"
-        desc = input("Block description (Enter to skip): ").strip()
+        name = (await ainput("New block name (Enter for 'My Memory'): ")).strip() or "My Memory"
+        desc = (await ainput("Block description (Enter to skip): ")).strip()
         print("Creating block...")
         block = await client.create_block(user_id=user_id, name=name, description=desc)
 
@@ -51,11 +56,18 @@ async def _run_cli() -> None:
     print(f"Session: {session.id}")
 
     # ---- chat loop ----
+    # helper: persist turns in background to avoid blocking the chat loop
+    async def _persist_turn(session, user_msg, ai_response) -> None:
+        try:
+            await session.add(user_msg=user_msg, ai_response=ai_response)
+        except Exception as e:
+            print(f"Warning: failed to persist turn: {e}")
+
     print("\nType your message (Ctrl+C or 'quit' to exit):\n")
     try:
         while True:
             try:
-                user_input = input("You: ").strip()
+                user_input = (await ainput("You: ")).strip()
             except EOFError:
                 break
 
@@ -93,8 +105,8 @@ async def _run_cli() -> None:
 
                 print(f"\nAssistant: {ai_response}\n")
 
-                # Persist turn
-                await session.add(user_msg=user_input, ai_response=ai_response)
+                # Persist turn in background (don't await so loop stays responsive)
+                asyncio.create_task(_persist_turn(session, user_input, ai_response))
 
             except Exception as e:
                 print(f"Error: {e}\n")

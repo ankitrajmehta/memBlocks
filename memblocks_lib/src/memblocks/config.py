@@ -54,7 +54,7 @@ class MemBlocksConfig(BaseSettings):
         None, validation_alias="MONGODB_CONNECTION_STRING"
     )
     mongodb_database_name: str = Field(
-        "memblocks", validation_alias="MONGODB_DATABASE_NAME"
+        "memblocks_v2", validation_alias="MONGODB_DATABASE_NAME"
     )
     # MongoDB collection names
     mongo_collection_users: str = Field(
