@@ -13,7 +13,7 @@ async def ainput(prompt: str = "") -> str:
 
 async def _run_cli() -> None:
     """Main async CLI loop."""
-    config = MemBlocksConfig()
+    config = MemBlocksConfig(llm_provider_name="groq") # you can also set config via environment variables or a .env file
     client = MemBlocksClient(config)
 
     print("=" * 60)

@@ -82,7 +82,6 @@ class MemBlocksClient:
         mongo_adapter: Optional[MongoDBAdapter] = None,
         embedding_provider: Optional[EmbeddingProvider] = None,
         qdrant_adapter: Optional[QdrantAdapter] = None,
-        llm_provider: Optional["LLMProvider"] = None,
     ) -> None:
         """
         Initialise the client, wiring all dependencies.
@@ -105,7 +104,15 @@ class MemBlocksClient:
         self.qdrant: QdrantAdapter = qdrant_adapter or QdrantAdapter(
             config, self.embeddings
         )
-        self.llm: "LLMProvider" = llm_provider or GroqLLMProvider(config)
+
+        if self.config.llm_provider_name == "groq":
+            llm_provider = GroqLLMProvider(config)
+        elif self.config.llm_provider_name == "gemini":
+            raise NotImplementedError(
+                "Custom LLM provider not implemented yet. Please use 'groq' or implement your own and pass it in the constructor."
+            )
+
+        self.llm: "LLMProvider" = llm_provider
 
         # ---- Transparency layer ----
         self.event_bus: EventBus = EventBus()

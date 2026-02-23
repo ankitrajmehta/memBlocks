@@ -11,8 +11,8 @@ This document provides a complete API reference for the `memblocks` library with
 3. [Block](#block)
 4. [Session](#session)
 5. [RetrievalResult](#retrievalresult)
-6. [CoreMemoryService](#corememoryservice)
-7. [SemanticMemoryService](#semanticmemoryservice)
+6. [CoreMemoryService (Internal)](#corememoryservice-internal)
+7. [SemanticMemoryService (Internal)](#semanticmemoryservice-internal)
 8. [Transparency Layer](#transparency-layer)
 9. [Data Models](#data-models)
 
@@ -228,6 +228,38 @@ def on_pipeline_done(payload):
 client.subscribe("on_pipeline_completed", on_pipeline_done)
 ```
 
+#### `unsubscribe(event_name: str, callback: Callable) -> None`
+
+Remove a callback from event subscriptions.
+
+```python
+client.unsubscribe("on_pipeline_completed", on_pipeline_done)
+```
+
+#### `get_operation_log() -> OperationLog`
+
+Return the OperationLog for inspecting database writes.
+
+```python
+log = client.get_operation_log()
+```
+
+#### `get_retrieval_log() -> RetrievalLog`
+
+Return the RetrievalLog for inspecting memory retrievals.
+
+```python
+log = client.get_retrieval_log()
+```
+
+#### `get_processing_history() -> ProcessingHistory`
+
+Return the ProcessingHistory for inspecting pipeline runs.
+
+```python
+history = client.get_processing_history()
+```
+
 #### `close() -> None`
 
 Gracefully close all connections.
@@ -416,9 +448,11 @@ if not context.is_empty():
 
 ---
 
-## CoreMemoryService
+## CoreMemoryService (Internal)
 
-Manage persistent "facts about the user." Accessed via `client.core` (internal use).
+> **Note:** This service is used internally by the library. Users typically interact with core memory through `Block.retrieve()` and `Block.core_retrieve()`. Direct access is not exposed via `MemBlocksClient`.
+
+Manage persistent "facts about the user."
 
 Core memory consists of two sections:
 - **Persona**: How the AI should behave
@@ -431,20 +465,19 @@ Core memory consists of two sections:
 Retrieve core memory for a block.
 
 ```python
-core = await client.core.get("block_abc123")
+core = await core_service.get("block_abc123")
 if core:
     print(f"Persona: {core.persona_content}")
     print(f"Human: {core.human_content}")
 ```
 
-#### `update(block_id: str, messages: List[Dict], ...) -> CoreMemoryUnit`
+#### `extract(messages: List[Dict], old_core_memory: Optional[CoreMemoryUnit] = None, ...) -> CoreMemoryUnit`
 
-Extract and save updated core memory from recent messages.
+Create an updated CoreMemoryUnit from conversation messages and previous state.
 
 ```python
-# Usually called automatically by MemoryPipeline
 messages = [{"role": "user", "content": "My name is Alice and I live in NYC."}]
-updated = await client.core.update("block_abc123", messages)
+new_core = await core_service.extract(messages, old_core_memory)
 ```
 
 #### `save(block_id: str, memory_unit: CoreMemoryUnit) -> bool`
@@ -452,20 +485,32 @@ updated = await client.core.update("block_abc123", messages)
 Manually save core memory.
 
 ```python
-from memblocks.models import CoreMemoryUnit
+from memblocks import CoreMemoryUnit
 
 core = CoreMemoryUnit(
     persona_content="The AI is helpful and concise.",
     human_content="User is named Alice, lives in NYC."
 )
-await client.core.save("block_abc123", core)
+await core_service.save("block_abc123", core)
+```
+
+#### `update(block_id: str, messages: List[Dict], ...) -> CoreMemoryUnit`
+
+Extract and immediately persist updated core memory.
+
+```python
+# Usually called automatically by MemoryPipeline
+messages = [{"role": "user", "content": "My name is Alice and I live in NYC."}]
+updated = await core_service.update("block_abc123", messages)
 ```
 
 ---
 
-## SemanticMemoryService
+## SemanticMemoryService (Internal)
 
-Manage vector-searchable memories. Used internally by `Block` and `MemoryPipeline`.
+> **Note:** This service is used internally by the library. Users typically interact with semantic memory through `Block.retrieve()` and `Block.semantic_retrieve()`. Direct access is not exposed via `MemBlocksClient`.
+
+Manage vector-searchable memories.
 
 ### Methods
 
@@ -496,12 +541,26 @@ for op in operations:
     print(f"{op.operation}: {op.content[:50]}...")
 ```
 
-#### `retrieve(query_texts: List[str], top_k: int = 5) -> List[List[SemanticMemoryUnit]]`
+#### `extract_and_store(messages: List[Dict], ps1_prompt: str = PS1_SEMANTIC_PROMPT, min_confidence: float = 0.0) -> List[SemanticMemoryUnit]`
 
-Retrieve semantically similar memories.
+Convenience method: extract AND store semantic memories in one call.
 
 ```python
-results = await semantic_service.retrieve(
+memories = await semantic_service.extract_and_store(
+    messages=messages,
+    min_confidence=0.7,
+)
+for mem in memories:
+    print(f"[{mem.type}] {mem.content}")
+```
+
+#### `retrieve(query_texts: List[str], top_k: int = 5) -> List[List[SemanticMemoryUnit]]`
+
+Retrieve semantically similar memories. **Note: This is a synchronous method.**
+
+```python
+# This is NOT async - don't use await
+results = semantic_service.retrieve(
     query_texts=["machine learning projects"],
     top_k=5,
 )
@@ -586,6 +645,7 @@ client.subscribe("on_pipeline_completed", on_pipeline_complete)
 | `on_pipeline_failed` | When pipeline errors |
 | `on_memory_retrieved` | When memories retrieved |
 | `on_db_write` | On any DB write |
+| `on_message_processed` | After a chat message is fully processed |
 
 ---
 
@@ -653,7 +713,7 @@ memory = SemanticMemoryUnit(
     type="event",
     source="conversation",
     confidence=0.95,
-    memory_time="2024-01-15T10:30:00",
+    memory_time="2024-01-15T10:30:00",  # Optional, mainly for "event" type
     entities=["machine learning", "certification"],
     keywords=["ML certification", "completed"],
     updated_at="2024-01-15T10:30:00",
@@ -757,10 +817,11 @@ async def main():
         await session.add(user_msg=user_msg, ai_response=ai_response)
     
     # --- Inspect Memory ---
-    core = await client.core.get(block.id)
-    print("=== Core Memory ===")
-    print(f"Persona: {core.persona_content}")
-    print(f"Human: {core.human_content}")
+    core_context = await block.core_retrieve()
+    if core_context.core:
+        print("=== Core Memory ===")
+        print(f"Persona: {core_context.core.persona_content}")
+        print(f"Human: {core_context.core.human_content}")
     
     await client.close()
 
