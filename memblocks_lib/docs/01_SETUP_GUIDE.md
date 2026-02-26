@@ -9,8 +9,10 @@ This guide covers installation, prerequisites, configuration, and first-run setu
 1. [Prerequisites](#prerequisites)
 2. [Installation](#installation)
 3. [Configuration](#configuration)
-4. [First Run](#first-run)
-5. [Troubleshooting](#troubleshooting)
+4. [LLM Providers](#llm-providers)
+5. [Logging](#logging)
+6. [First Run](#first-run)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -91,9 +93,17 @@ cp .env.example .env
 Edit `.env` with your values:
 
 ```env
-# === LLM Configuration (Required) ===
+# === LLM Provider Selection (Required) ===
+# Choose your provider: "groq" (default) or "gemini"
+LLM_PROVIDER_NAME=groq
+
+# === Groq API (Required if using Groq) ===
 GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxx
 LLM_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
+
+# === Google Gemini API (Required if using Gemini) ===
+# GEMINI_API_KEY=AIzaSy_xxxxxxxxxxxxxxxxxx
+# LLM_MODEL=gemini-2.0-flash
 
 # === MongoDB (Required) ===
 MONGODB_CONNECTION_STRING=mongodb://localhost:27017
@@ -133,8 +143,9 @@ from memblocks import MemBlocksClient, MemBlocksConfig
 # Option 1: Load from .env (automatic)
 config = MemBlocksConfig()
 
-# Option 2: Explicit values
+# Option 2: Groq — explicit values
 config = MemBlocksConfig(
+    llm_provider_name="groq",
     groq_api_key="gsk_xxxxxxxxx",
     mongodb_connection_string="mongodb://localhost:27017",
     qdrant_host="localhost",
@@ -144,7 +155,18 @@ config = MemBlocksConfig(
     keep_last_n=5,
 )
 
-# Create client
+# Option 3: Gemini — explicit values
+config = MemBlocksConfig(
+    llm_provider_name="gemini",
+    gemini_api_key="AIzaSy_xxxxxxxxx",
+    llm_model="gemini-2.0-flash",
+    mongodb_connection_string="mongodb://localhost:27017",
+    qdrant_host="localhost",
+    qdrant_port=6333,
+    ollama_base_url="http://localhost:11434",
+)
+
+# Create client — provider is wired automatically
 client = MemBlocksClient(config)
 ```
 
@@ -156,8 +178,10 @@ client = MemBlocksClient(config)
 
 | Setting | Environment Variable | Default | Description |
 |---------|---------------------|---------|-------------|
-| `groq_api_key` | `GROQ_API_KEY` | *required* | API key for Groq LLM |
-| `llm_model` | `LLM_MODEL` | `meta-llama/llama-4-maverick-17b-128e-instruct` | Model identifier |
+| `llm_provider_name` | `LLM_PROVIDER_NAME` | `groq` | Active LLM provider (`"groq"` or `"gemini"`) |
+| `groq_api_key` | `GROQ_API_KEY` | `None` | API key for Groq (required when provider is `"groq"`) |
+| `gemini_api_key` | `GEMINI_API_KEY` | `None` | API key for Google Gemini (required when provider is `"gemini"`) |
+| `llm_model` | `LLM_MODEL` | `meta-llama/llama-4-maverick-17b-128e-instruct` | Model identifier (provider-specific) |
 | `mongodb_connection_string` | `MONGODB_CONNECTION_STRING` | *required* | MongoDB connection URI |
 | `mongodb_database_name` | `MONGODB_DATABASE_NAME` | `memblocks` | Database name |
 | `qdrant_host` | `QDRANT_HOST` | `localhost` | Qdrant server host |
@@ -182,6 +206,192 @@ client = MemBlocksClient(config)
 | `llm_core_extraction_temperature` | `LLM_CORE_EXTRACTION_TEMPERATURE` | `0.0` | Core memory updates |
 | `llm_recursive_summary_gen_temperature` | `LLM_RECURSIVE_SUMMARY_GEN_TEMPERATURE` | `0.3` | Summary generation |
 | `llm_memory_update_temperature` | `LLM_MEMORY_UPDATE_TEMPERATURE` | `0.0` | PS2 conflict resolution |
+
+---
+
+## LLM Providers
+
+memBlocks ships two built-in LLM provider backends. The active provider is selected via `LLM_PROVIDER_NAME` and instantiated automatically by `MemBlocksClient`.
+
+### Groq (Default)
+
+Uses [`langchain-groq`](https://pypi.org/project/langchain-groq/) to call Groq's hosted inference API.
+
+**Required env var:** `GROQ_API_KEY`
+
+```env
+LLM_PROVIDER_NAME=groq
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxx
+LLM_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
+```
+
+```python
+from memblocks import MemBlocksClient, MemBlocksConfig
+
+config = MemBlocksConfig(
+    llm_provider_name="groq",
+    groq_api_key="gsk_xxxxxxxxx",
+    llm_model="meta-llama/llama-4-maverick-17b-128e-instruct",
+)
+client = MemBlocksClient(config)
+```
+
+### Gemini
+
+Uses [`langchain-google-genai`](https://pypi.org/project/langchain-google-genai/) to call Google's Gemini API.
+
+**Required env var:** `GEMINI_API_KEY`
+
+Get your key from [Google AI Studio](https://aistudio.google.com/apikey).
+
+```env
+LLM_PROVIDER_NAME=gemini
+GEMINI_API_KEY=AIzaSy_xxxxxxxxxxxxxxxxxx
+LLM_MODEL=gemini-2.0-flash
+```
+
+```python
+from memblocks import MemBlocksClient, MemBlocksConfig
+
+config = MemBlocksConfig(
+    llm_provider_name="gemini",
+    gemini_api_key="AIzaSy_xxxxxxxxx",
+    llm_model="gemini-2.0-flash",
+)
+client = MemBlocksClient(config)
+```
+
+**Popular Gemini model identifiers:**
+
+| Model | Notes |
+|-------|-------|
+| `gemini-2.0-flash` | Fast, cost-efficient — recommended default |
+| `gemini-2.0-flash-lite` | Lightest and fastest |
+| `gemini-1.5-pro` | Highest capability, 2M token context |
+| `gemini-1.5-flash` | Balanced speed/capability |
+
+### Using a Custom Provider
+
+You can bypass the built-in providers entirely by passing your own `LLMProvider` instance directly:
+
+```python
+from memblocks.llm.base import LLMProvider
+from memblocks import MemBlocksClient, MemBlocksConfig
+
+class MyOpenAIProvider(LLMProvider):
+    def create_structured_chain(self, system_prompt, pydantic_model, temperature=0.0):
+        ...  # return a LangChain-compatible runnable
+
+    async def chat(self, messages, temperature=None) -> str:
+        ...  # return assistant response string
+
+config = MemBlocksConfig(llm_provider_name="groq")  # provider_name is ignored when injecting
+client = MemBlocksClient(config)
+client.llm = MyOpenAIProvider(...)   # override after construction
+```
+
+> See [Methods and Interfaces](./02_METHODS_AND_INTERFACES.md#llmprovider-base-class) for the full `LLMProvider` interface.
+
+### Optional Arize Monitoring
+
+Both providers support [Arize Phoenix](https://arize.com/) tracing via `openinference`. Set the following env vars to enable it:
+
+```env
+ARIZE_SPACE_ID=your_space_id
+ARIZE_API_KEY=your_api_key
+ARIZE_PROJECT_NAME=memBlocks
+```
+
+Install the optional dependencies:
+
+```bash
+pip install arize openinference-instrumentation-langchain
+```
+
+If the packages are absent but the keys are set, the provider logs a warning and continues without monitoring.
+
+---
+
+## Logging
+
+memBlocks uses Python's standard `logging` module with a single root logger named **`memblocks`**. By default all log output is suppressed (a `NullHandler` is attached), so the library is silent inside your application.
+
+### Logger Hierarchy
+
+Every internal module follows the `memblocks.<module>` naming convention:
+
+```
+memblocks                          ← root library logger
+├── memblocks.client
+├── memblocks.llm.groq_provider
+├── memblocks.llm.gemini_provider
+├── memblocks.services.session
+├── memblocks.services.block_manager
+├── memblocks.storage.mongo
+├── memblocks.storage.qdrant
+└── ...
+```
+
+Child loggers inherit handlers and level from the parent `memblocks` logger automatically.
+
+### Enabling Logs in Your Application
+
+```python
+import logging
+
+# Show all INFO and above from the entire library
+logging.getLogger("memblocks").setLevel(logging.INFO)
+logging.getLogger("memblocks").addHandler(logging.StreamHandler())
+```
+
+For structured output or file logging:
+
+```python
+import logging
+
+handler = logging.FileHandler("memblocks.log")
+handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+
+logger = logging.getLogger("memblocks")
+logger.setLevel(logging.DEBUG)
+logger.addHandler(handler)
+```
+
+### Filtering to a Specific Module
+
+```python
+import logging
+
+# Only show Gemini provider logs
+logging.getLogger("memblocks.llm.gemini_provider").setLevel(logging.DEBUG)
+logging.getLogger("memblocks.llm.gemini_provider").addHandler(logging.StreamHandler())
+```
+
+### Log Levels Used by the Library
+
+| Level | When emitted |
+|-------|-------------|
+| `DEBUG` | Provider initialisation details, Arize disabled notice |
+| `INFO` | Block created, session started, pipeline milestones |
+| `WARNING` | Optional packages missing (e.g. Arize), non-fatal issues |
+| `ERROR` | Storage failures, LLM errors |
+
+### Using the Logger Inside the Library (for Contributors)
+
+Internal modules obtain a logger at module level using `get_logger`:
+
+```python
+from memblocks.logger import get_logger
+
+logger = get_logger(__name__)   # e.g. "memblocks.services.session"
+
+logger.debug("Connecting to Qdrant at %s:%s", host, port)
+logger.info("Created block %s", block_id)
+logger.warning("Arize monitoring disabled — keys not set")
+logger.error("Failed to store vector: %s", exc)
+```
+
+Because `__name__` inside any `memblocks.*` module always starts with `memblocks.`, all child loggers propagate to the root `memblocks` logger automatically — no extra wiring required.
 
 ---
 
@@ -281,10 +491,29 @@ This design gives you maximum flexibility:
 
 ### "GROQ_API_KEY not found"
 
-**Solution**: Set the environment variable or pass explicitly:
+**Solution**: Set `LLM_PROVIDER_NAME=groq` and provide the key:
 
 ```python
-config = MemBlocksConfig(groq_api_key="gsk_xxx")
+config = MemBlocksConfig(llm_provider_name="groq", groq_api_key="gsk_xxx")
+```
+
+### "GEMINI_API_KEY not found — set it in .env or pass to MemBlocksConfig"
+
+**Solution**: Set `LLM_PROVIDER_NAME=gemini` and provide the key:
+
+```python
+config = MemBlocksConfig(llm_provider_name="gemini", gemini_api_key="AIzaSy_xxx")
+```
+
+Get a key at [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+
+### "Unknown LLM provider: …"
+
+`LLM_PROVIDER_NAME` must be exactly `"groq"` or `"gemini"` (case-sensitive).
+
+```env
+LLM_PROVIDER_NAME=gemini   # correct
+LLM_PROVIDER_NAME=Gemini   # incorrect — will raise ValueError
 ```
 
 ### "MONGODB_CONNECTION_STRING not found"
@@ -338,6 +567,16 @@ The library persists sessions to MongoDB. If sessions disappear:
 1. Check MongoDB is running
 2. Verify `mongodb_connection_string` is correct
 3. Check the `sessions` collection exists
+
+### Library is completely silent / no log output
+
+By default memBlocks attaches a `NullHandler` and produces no output. Enable logging explicitly:
+
+```python
+import logging
+logging.getLogger("memblocks").setLevel(logging.DEBUG)
+logging.getLogger("memblocks").addHandler(logging.StreamHandler())
+```
 
 ---
 

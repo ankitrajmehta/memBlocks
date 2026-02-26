@@ -11,10 +11,12 @@ This document provides a complete API reference for the `memblocks` library with
 3. [Block](#block)
 4. [Session](#session)
 5. [RetrievalResult](#retrievalresult)
-6. [CoreMemoryService (Internal)](#corememoryservice-internal)
-7. [SemanticMemoryService (Internal)](#semanticmemoryservice-internal)
-8. [Transparency Layer](#transparency-layer)
-9. [Data Models](#data-models)
+6. [LLM Providers](#llm-providers)
+7. [Logger](#logger)
+8. [CoreMemoryService (Internal)](#corememoryservice-internal)
+9. [SemanticMemoryService (Internal)](#semanticmemoryservice-internal)
+10. [Transparency Layer](#transparency-layer)
+11. [Data Models](#data-models)
 
 ---
 
@@ -69,16 +71,11 @@ The main entry point for the library. Wires all dependencies and provides a **fl
 
 ```python
 from memblocks import MemBlocksClient, MemBlocksConfig
-from memblocks.llm.groq_provider import GroqLLMProvider
 
 config = MemBlocksConfig()
 
-# Default setup
+# Default setup — provider selected by LLM_PROVIDER_NAME in config
 client = MemBlocksClient(config)
-
-# With custom LLM provider
-my_llm = GroqLLMProvider(config)
-client = MemBlocksClient(config, llm_provider=my_llm)
 
 # With custom storage adapters (for testing)
 client = MemBlocksClient(
@@ -89,6 +86,15 @@ client = MemBlocksClient(
 )
 ```
 
+The active LLM provider is resolved automatically from `config.llm_provider_name`:
+
+| `llm_provider_name` | Provider class | Required key |
+|---------------------|---------------|--------------|
+| `"groq"` (default) | `GroqLLMProvider` | `GROQ_API_KEY` |
+| `"gemini"` | `GeminiLLMProvider` | `GEMINI_API_KEY` |
+
+Any other value raises `ValueError`.
+
 ### Attributes
 
 | Attribute | Type | Description |
@@ -96,7 +102,7 @@ client = MemBlocksClient(
 | `mongo` | `MongoDBAdapter` | MongoDB operations |
 | `qdrant` | `QdrantAdapter` | Qdrant vector operations |
 | `embeddings` | `EmbeddingProvider` | Ollama embedding wrapper |
-| `llm` | `LLMProvider` | LLM abstraction (default: Groq) |
+| `llm` | `LLMProvider` | Active LLM backend (Groq or Gemini) |
 | `event_bus` | `EventBus` | Pub/sub for internal events |
 | `operation_log` | `OperationLog` | Database write log |
 | `retrieval_log` | `RetrievalLog` | Memory retrieval log |
@@ -448,6 +454,303 @@ if not context.is_empty():
 
 ---
 
+## LLM Providers
+
+memBlocks abstracts all LLM access behind the `LLMProvider` interface. Two built-in backends are provided; you can also implement your own.
+
+### LLMProvider Base Class
+
+Defined in `memblocks.llm.base`. All providers must implement two methods:
+
+```python
+from memblocks.llm.base import LLMProvider
+from pydantic import BaseModel
+from typing import Any, Dict, List, Optional, Type
+
+class LLMProvider:
+    def create_structured_chain(
+        self,
+        system_prompt: str,
+        pydantic_model: Type[BaseModel],
+        temperature: float = 0.0,
+    ) -> Any:
+        """
+        Return a LangChain-compatible runnable that accepts {"input": str}
+        and returns a pydantic_model instance.
+
+        Used internally for:
+        - PS1 semantic memory extraction
+        - PS2 conflict resolution
+        - Core memory extraction
+        - Recursive summary generation
+        """
+        ...
+
+    async def chat(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: Optional[float] = None,
+    ) -> str:
+        """
+        Send a list of {"role": ..., "content": ...} messages and return
+        the assistant's response as a plain string.
+
+        Used by the caller for the main conversation turn (client.llm.chat(...)).
+        """
+        ...
+```
+
+### GroqLLMProvider
+
+Default backend using [`langchain-groq`](https://pypi.org/project/langchain-groq/).
+
+```python
+from memblocks.llm.groq_provider import GroqLLMProvider
+from memblocks import MemBlocksConfig
+
+config = MemBlocksConfig(
+    llm_provider_name="groq",
+    groq_api_key="gsk_xxxxxxxxx",
+    llm_model="meta-llama/llama-4-maverick-17b-128e-instruct",
+)
+
+# Automatically instantiated by MemBlocksClient
+client = MemBlocksClient(config)
+
+# Or create directly
+provider = GroqLLMProvider(config)
+response = await provider.chat([{"role": "user", "content": "Hello!"}])
+```
+
+**Structured output** uses Groq's native `json_schema` mode (`method="json_schema"`).
+
+**Key config fields:**
+
+| Field | Description |
+|-------|-------------|
+| `groq_api_key` | Required. Groq API key. |
+| `llm_model` | Model identifier, e.g. `meta-llama/llama-4-maverick-17b-128e-instruct`. |
+| `llm_convo_temperature` | Default temperature for `chat()` calls (default: `0.7`). |
+
+### GeminiLLMProvider
+
+Backend using [`langchain-google-genai`](https://pypi.org/project/langchain-google-genai/).
+
+```python
+from memblocks.llm.gemini_provider import GeminiLLMProvider
+from memblocks import MemBlocksClient, MemBlocksConfig
+
+config = MemBlocksConfig(
+    llm_provider_name="gemini",
+    gemini_api_key="AIzaSy_xxxxxxxxx",
+    llm_model="gemini-2.0-flash",
+)
+
+# Automatically instantiated by MemBlocksClient
+client = MemBlocksClient(config)
+
+# Or create directly
+provider = GeminiLLMProvider(config)
+response = await provider.chat([{"role": "user", "content": "Hello!"}])
+```
+
+**Structured output** uses Gemini's native structured output mode (`llm.with_structured_output(model, include_raw=False)`).
+
+**Response content handling:** `chat()` transparently handles both Gemini's plain-string and list-of-parts response formats, always returning a single `str`.
+
+**Key config fields:**
+
+| Field | Description |
+|-------|-------------|
+| `gemini_api_key` | Required. Google AI API key from [aistudio.google.com](https://aistudio.google.com/apikey). |
+| `llm_model` | Model identifier. Recommended: `gemini-2.0-flash`. |
+| `llm_convo_temperature` | Default temperature for `chat()` calls (default: `0.7`). |
+
+**Popular Gemini models:**
+
+| Model ID | Notes |
+|----------|-------|
+| `gemini-2.0-flash` | Fast, cost-efficient — recommended default |
+| `gemini-2.0-flash-lite` | Lightest and fastest |
+| `gemini-1.5-pro` | Highest capability, 2M token context |
+| `gemini-1.5-flash` | Balanced speed/capability |
+
+### Optional Arize Monitoring
+
+Both `GroqLLMProvider` and `GeminiLLMProvider` support [Arize Phoenix](https://arize.com/) LangChain tracing. Set these fields in `MemBlocksConfig` (or the equivalent env vars) to enable it:
+
+```python
+config = MemBlocksConfig(
+    llm_provider_name="gemini",
+    gemini_api_key="...",
+    arize_space_id="your_space_id",
+    arize_api_key="your_api_key",
+    arize_project_name="my-project",  # default: "memBlocks"
+)
+```
+
+Required packages (optional extras):
+
+```bash
+pip install arize openinference-instrumentation-langchain
+```
+
+If the packages are not installed but the keys are set, the provider logs a `WARNING` and continues without monitoring. If neither key is set, a `DEBUG` message is emitted and monitoring is skipped silently.
+
+### Implementing a Custom Provider
+
+Subclass `LLMProvider` and implement both abstract methods:
+
+```python
+from memblocks.llm.base import LLMProvider
+from memblocks import MemBlocksClient, MemBlocksConfig
+from pydantic import BaseModel
+from typing import Any, Dict, List, Optional, Type
+
+class MyOpenAIProvider(LLMProvider):
+    def __init__(self, api_key: str, model: str = "gpt-4o"):
+        self._api_key = api_key
+        self._model = model
+
+    def create_structured_chain(
+        self,
+        system_prompt: str,
+        pydantic_model: Type[BaseModel],
+        temperature: float = 0.0,
+    ) -> Any:
+        from langchain_openai import ChatOpenAI
+        from langchain_core.prompts import ChatPromptTemplate
+
+        llm = ChatOpenAI(model=self._model, temperature=temperature, api_key=self._api_key)
+        structured_llm = llm.with_structured_output(pydantic_model, include_raw=False)
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("user", "{input}"),
+        ])
+        return prompt | structured_llm
+
+    async def chat(self, messages: List[Dict[str, str]], temperature: Optional[float] = None) -> str:
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(model=self._model, temperature=temperature or 0.7, api_key=self._api_key)
+        response = await llm.ainvoke(messages)
+        return response.content
+
+# Inject after client construction
+config = MemBlocksConfig(llm_provider_name="groq", groq_api_key="placeholder")
+client = MemBlocksClient(config)
+client.llm = MyOpenAIProvider(api_key="sk-xxx")
+```
+
+---
+
+## Logger
+
+memBlocks uses Python's standard `logging` module. All log output is suppressed by default — the library attaches a `NullHandler` to its root logger so it is silent in any application that does not configure it.
+
+### Getting a Logger (for Contributors)
+
+Internal modules obtain a child logger at module level:
+
+```python
+from memblocks.logger import get_logger
+
+logger = get_logger(__name__)
+# e.g. "memblocks.llm.gemini_provider", "memblocks.services.session", etc.
+```
+
+`get_logger` is a thin wrapper over `logging.getLogger`. Using `__name__` inside any `memblocks.*` module automatically creates a child of the root `memblocks` logger, so handlers and levels propagate without extra wiring.
+
+### Logger Hierarchy
+
+```
+memblocks                            ← root library logger (NullHandler by default)
+├── memblocks.client
+├── memblocks.llm.groq_provider
+├── memblocks.llm.gemini_provider
+├── memblocks.services.session
+├── memblocks.services.session_manager
+├── memblocks.services.block_manager
+├── memblocks.services.core_memory
+├── memblocks.services.semantic_memory
+├── memblocks.services.memory_pipeline
+├── memblocks.storage.mongo
+├── memblocks.storage.qdrant
+└── memblocks.storage.embeddings
+```
+
+### Enabling Logs in Your Application
+
+```python
+import logging
+
+# Show all INFO+ messages from every memblocks module
+logging.getLogger("memblocks").setLevel(logging.INFO)
+logging.getLogger("memblocks").addHandler(logging.StreamHandler())
+```
+
+Structured / file logging:
+
+```python
+import logging
+
+handler = logging.FileHandler("memblocks.log")
+handler.setFormatter(
+    logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+)
+
+root = logging.getLogger("memblocks")
+root.setLevel(logging.DEBUG)
+root.addHandler(handler)
+```
+
+Filtering to a specific module:
+
+```python
+import logging
+
+# Only Gemini provider logs
+logging.getLogger("memblocks.llm.gemini_provider").setLevel(logging.DEBUG)
+logging.getLogger("memblocks.llm.gemini_provider").addHandler(logging.StreamHandler())
+```
+
+### Log Levels Used by the Library
+
+| Level | When emitted |
+|-------|-------------|
+| `DEBUG` | Provider init details, Arize disabled notice, connection info |
+| `INFO` | Block created, session started, pipeline milestones |
+| `WARNING` | Optional packages missing (e.g. Arize), non-fatal issues |
+| `ERROR` | Storage failures, LLM errors |
+
+### `get_logger` API
+
+```python
+from memblocks.logger import get_logger
+
+logger = get_logger(name: str) -> logging.Logger
+```
+
+**Args:**
+- `name` — Typically `__name__` of the calling module.
+
+**Returns:**  
+A `logging.Logger` instance named `name`, which is a child of `memblocks` when called from inside the library.
+
+**Example:**
+
+```python
+from memblocks.logger import get_logger
+
+logger = get_logger(__name__)
+
+logger.debug("Connecting to Qdrant at %s:%s", host, port)
+logger.info("Created block %s", block_id)
+logger.warning("Arize monitoring disabled — keys not set")
+logger.error("Failed to store vector: %s", exc)
+```
+
+---
+
 ## CoreMemoryService (Internal)
 
 > **Note:** This service is used internally by the library. Users typically interact with core memory through `Block.retrieve()` and `Block.core_retrieve()`. Direct access is not exposed via `MemBlocksClient`.
@@ -766,10 +1069,20 @@ op = MemoryOperation(
 
 ```python
 import asyncio
+import logging
 from memblocks import MemBlocksClient, MemBlocksConfig
 
+# Optional: enable library logs
+logging.getLogger("memblocks").setLevel(logging.INFO)
+logging.getLogger("memblocks").addHandler(logging.StreamHandler())
+
 async def main():
-    config = MemBlocksConfig()
+    # Use Gemini as the LLM provider
+    config = MemBlocksConfig(
+        llm_provider_name="gemini",
+        gemini_api_key="AIzaSy_xxxxxxxxx",
+        llm_model="gemini-2.0-flash",
+    )
     client = MemBlocksClient(config)
     
     # --- Phase A: Initialization ---
