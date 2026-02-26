@@ -29,15 +29,17 @@ class MemBlocksConfig(BaseSettings):
     # LLM Configuration
     # -------------------------------------------------------------------------
     llm_provider_name: str = Field(
-        "groq", validation_alias="LLM_PROVIDER_NAME", description="LLM provider to use (e.g. 'groq', 'gemini')"
+        "groq",
+        validation_alias="LLM_PROVIDER_NAME",
+        description="LLM provider to use (e.g. 'groq', 'gemini')",
     )
-    
+
     # Groq API
     groq_api_key: Optional[str] = Field(None, validation_alias="GROQ_API_KEY")
-    
+
     # Google Gemini API
     gemini_api_key: Optional[str] = Field(None, validation_alias="GEMINI_API_KEY")
-    
+
     llm_model: str = Field(
         "meta-llama/llama-4-maverick-17b-128e-instruct",
         validation_alias="LLM_MODEL",
@@ -104,13 +106,13 @@ class MemBlocksConfig(BaseSettings):
     # -------------------------------------------------------------------------
     # Memory pipeline behaviour
     # -------------------------------------------------------------------------
-    memory_window: int = Field(
-        5,
+    memory_window_limit: int = Field(
+        10,
         validation_alias="MEMORY_WINDOW",
         description="Number of messages to accumulate before triggering memory processing.",
     )
     keep_last_n: int = Field(
-        2,
+        4,
         validation_alias="KEEP_LAST_N",
         description="Messages kept in active context after the window is processed.",
     )

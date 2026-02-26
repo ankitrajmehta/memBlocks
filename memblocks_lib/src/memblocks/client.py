@@ -154,7 +154,7 @@ class MemBlocksClient:
             embedding_provider=self.embeddings,
             core_memory_service=self._core,
             config=self.config,
-            memory_window=self.config.memory_window,
+            memory_window_limit=self.config.memory_window_limit,
             keep_last_n=self.config.keep_last_n,
             operation_log=self.operation_log,
             event_bus=self.event_bus,

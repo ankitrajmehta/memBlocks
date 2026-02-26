@@ -49,7 +49,7 @@ class Session:
         block_id: str,
         mongo: "MongoDBAdapter",
         pipeline: "MemoryPipeline",
-        memory_window: int = 10,
+        memory_window_limit: int = 10,
         keep_last_n: int = 5,
         created_at: Optional[str] = None,
     ) -> None:
@@ -60,7 +60,7 @@ class Session:
 
         self._mongo = mongo
         self._pipeline = pipeline
-        self._memory_window = memory_window
+        self._memory_window_limit = memory_window_limit
         self._keep_last_n = keep_last_n
 
     # ------------------------------------------------------------------ #
@@ -79,7 +79,7 @@ class Session:
             List of message dicts in chronological order.
         """
         return await self._mongo.get_session_messages(
-            self.id, limit=self._memory_window
+            self.id, limit=self._memory_window_limit
         )
 
     # ------------------------------------------------------------------ #
@@ -110,7 +110,7 @@ class Session:
         1. Append user message to MongoDB session.
         2. Append assistant message to MongoDB session.
         3. Count total messages.
-        4. If count >= memory_window:
+        4. If count >= memory_window_limit:
            a. Snapshot current messages.
            b. Fetch current recursive summary.
            c. Run the memory pipeline (semantic + core + summary).
@@ -140,10 +140,18 @@ class Session:
 
         msg_count = await self._mongo.get_session_message_count(self.id)
 
-        if msg_count >= self._memory_window:
+        if msg_count >= self._memory_window_limit:
             # Snapshot the full window for the pipeline
-            messages = await self._mongo.get_session_messages(self.id, limit=msg_count)
+            messages = await self._mongo.get_session_messages(self.id)
             current_summary = await self._mongo.get_session_summary(self.id)
+
+            await self._mongo.trim_session_messages(self.id, self._keep_last_n)
+            logger.debug(
+                "Session %s: flushed (%s -> %s messages)",
+                self.id,
+                msg_count,
+                self._keep_last_n,
+            )
 
             new_summary = await self._pipeline.run(
                 user_id=self.user_id,
@@ -154,13 +162,7 @@ class Session:
 
             # Persist updated summary and trim messages
             await self._mongo.set_session_summary(self.id, new_summary)
-            await self._mongo.trim_session_messages(self.id, self._keep_last_n)
-            logger.debug(
-                "Session %s: flushed (%s -> %s messages)",
-                self.id,
-                msg_count,
-                self._keep_last_n,
-            )
+
 
     # ------------------------------------------------------------------ #
     # Repr

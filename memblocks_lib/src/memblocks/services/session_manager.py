@@ -38,7 +38,7 @@ class SessionManager:
         embedding_provider: "EmbeddingProvider",
         core_memory_service: "CoreMemoryService",
         config: "MemBlocksConfig",
-        memory_window: int = 10,
+        memory_window_limit: int = 10,
         keep_last_n: int = 5,
         operation_log: Optional["OperationLog"] = None,
         event_bus: Optional[Any] = None,
@@ -51,7 +51,7 @@ class SessionManager:
         self._embeddings = embedding_provider
         self._core = core_memory_service
         self._config = config
-        self._memory_window = memory_window
+        self._memory_window_limit = memory_window_limit
         self._keep_last_n = keep_last_n
         self._log = operation_log
         self._bus = event_bus
@@ -172,7 +172,7 @@ class SessionManager:
             block_id=block_id,
             mongo=self._mongo,
             pipeline=pipeline,
-            memory_window=self._memory_window,
+            memory_window_limit=self._memory_window_limit,
             keep_last_n=self._keep_last_n,
             created_at=created_at,
         )

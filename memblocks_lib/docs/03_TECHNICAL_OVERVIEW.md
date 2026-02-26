@@ -441,7 +441,6 @@ Shared metadata for individual memory units:
 class MemoryUnitMetaData(BaseModel):
     usage: List[str] = []              # Access timestamps
     status: Literal["active", "archived", "deleted"] = "active"
-    Parent_Memory_ids: List[str] = []  # Hierarchical relationships
     message_ids: List[str] = []        # Source message references
 ```
 
@@ -2634,7 +2633,6 @@ Each point in a semantic collection stores a full `SemanticMemoryUnit`:
     "meta_data": {
       "usage": ["2024-01-15T10:30:00"],
       "status": "active",
-      "Parent_Memory_ids": [],
       "message_ids": []
     },
     "embedding_text": "User completed a machine learning certification...\nKeywords: ML certification..."

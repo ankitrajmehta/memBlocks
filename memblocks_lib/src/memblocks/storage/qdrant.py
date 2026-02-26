@@ -230,9 +230,6 @@ class QdrantAdapter:
             logger.error("Error storing vector in '%s': %s", collection_name, e)
             return False
 
-    # Mirrors VectorDBManager.retrieve_from_vector() (vector_db_manager.py:88-108)
-    # ------------------------------------------------------------------
-
     def retrieve_from_vector(
         self,
         collection_name: str,
