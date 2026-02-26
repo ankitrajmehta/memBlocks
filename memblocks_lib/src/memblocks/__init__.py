@@ -7,6 +7,7 @@ Public API surface — import from here for convenience:
     from memblocks.models import MemoryBlock, SemanticMemoryUnit, CoreMemoryUnit
     from memblocks.llm.base import LLMProvider
     from memblocks.llm.groq_provider import GroqLLMProvider
+    from memblocks.llm.gemini_provider import GeminiLLMProvider
     from memblocks.prompts import PS1_SEMANTIC_PROMPT
 """
 
@@ -19,6 +20,7 @@ from memblocks.client import MemBlocksClient
 # LLM abstractions
 from memblocks.llm.base import LLMProvider
 from memblocks.llm.groq_provider import GroqLLMProvider
+from memblocks.llm.gemini_provider import GeminiLLMProvider
 
 # Stateful objects returned by the client
 from memblocks.services.block import Block
@@ -43,6 +45,7 @@ __all__ = [
     # LLM
     "LLMProvider",
     "GroqLLMProvider",
+    "GeminiLLMProvider",
     # Stateful objects
     "Block",
     "Session",
