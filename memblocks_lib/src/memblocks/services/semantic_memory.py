@@ -358,9 +358,12 @@ class SemanticMemoryService:
         Returns:
             List of lists — one list of SemanticMemoryUnit per query, de-duplicated.
         """
+        #TODO: query_texts = query_expansion(query) -> Returns new queries with keywords and entities for each query
+
         query_vectors = self._embeddings.embed_documents(query_texts)
 
         def _search(vector: List[float]) -> List[SemanticMemoryUnit]:
+            # Should do keyword matching (BM25) & Entity search
             results = self._qdrant.retrieve_from_vector(self._collection, vector, top_k)
             return [SemanticMemoryUnit(**hit.payload) for hit in results]
 
@@ -378,6 +381,9 @@ class SemanticMemoryService:
                     seen_contents.add(memory.content)
                     unique_group.append(memory)
             deduplicated.append(unique_group)
+
+        # Reranking
+        # Should return List[SemanticMemoryUnits]
 
         # Transparency: log retrieval
         if self._retrieval_log is not None:

@@ -259,6 +259,7 @@ class QdrantAdapter:
             print(f"Error retrieving vectors: {e}")
             return []
 
+    # Unused
     def retrieve_from_payload(
         self,
         collection_name: str,
@@ -298,6 +299,22 @@ class QdrantAdapter:
         except Exception as e:
             print(f"Error retrieving vectors by payload: {e}")
             return []
+
+    class QueryObject:
+        query_vector: List[float]
+        keywords: List[str] 
+        entities: List[str]
+            
+    def hybrid_retrieve(self, query_objects: List[QueryObject], top_k: int = 5) -> list:
+        """
+        Retrieve vectors by hybrid search.
+        Use query_vector for vector search
+        Use keywords and entities for BM25 search
+        Combine the results using Reciprocal Rank Fusion (RRF)
+        """
+        #TODO: implement
+        pass
+
 
     # ------------------------------------------------------------------
     # Vector deletion
