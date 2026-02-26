@@ -14,9 +14,13 @@ Users interact with the conversation window through this object:
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from memblocks.logger import get_logger
+
 if TYPE_CHECKING:
     from memblocks.services.memory_pipeline import MemoryPipeline
     from memblocks.storage.mongo import MongoDBAdapter
+
+logger = get_logger(__name__)
 
 
 class Session:
@@ -151,8 +155,11 @@ class Session:
             # Persist updated summary and trim messages
             await self._mongo.set_session_summary(self.id, new_summary)
             await self._mongo.trim_session_messages(self.id, self._keep_last_n)
-            print(
-                f"   ✓ Session {self.id}: flushed ({msg_count} → {self._keep_last_n} messages)"
+            logger.debug(
+                "Session %s: flushed (%s -> %s messages)",
+                self.id,
+                msg_count,
+                self._keep_last_n,
             )
 
     # ------------------------------------------------------------------ #

@@ -4,8 +4,12 @@ import requests
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, TYPE_CHECKING
 
+from memblocks.logger import get_logger
+
 if TYPE_CHECKING:
     from memblocks.config import MemBlocksConfig
+
+logger = get_logger(__name__)
 
 
 class EmbeddingProvider:
@@ -65,7 +69,7 @@ class EmbeddingProvider:
             result = response.json()
             return result.get("embedding")
         except Exception as e:
-            print(f"Error generating embedding: {e}")
+            logger.error("Error generating embedding: %s", e)
             raise
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:

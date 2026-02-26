@@ -12,10 +12,14 @@ from qdrant_client.models import (
     VectorParams,
 )
 
+from memblocks.logger import get_logger
+
 if TYPE_CHECKING:
     from memblocks.config import MemBlocksConfig
     from memblocks.storage.embeddings import EmbeddingProvider
     from memblocks.services.transparency import OperationLog
+
+logger = get_logger(__name__)
 
 
 class QdrantAdapter:
@@ -156,7 +160,7 @@ class QdrantAdapter:
         try:
             collections = self._client.get_collections().collections
             if any(col.name == collection_name for col in collections):
-                print(f"Collection '{collection_name}' already exists.")
+                logger.debug("Collection '%s' already exists.", collection_name)
                 return True
 
             self._client.create_collection(
@@ -168,7 +172,7 @@ class QdrantAdapter:
             )
             return True
         except Exception as e:
-            print(f"Error creating collection: {e}")
+            logger.error("Error creating collection '%s': %s", collection_name, e)
             return False
 
     # ------------------------------------------------------------------
@@ -223,11 +227,9 @@ class QdrantAdapter:
                 error=str(e),
                 payload_summary=f"store vector in {collection_name}",
             )
-            print(f"Error storing vector: {e}")
+            logger.error("Error storing vector in '%s': %s", collection_name, e)
             return False
 
-    # ------------------------------------------------------------------
-    # Vector reads
     # Mirrors VectorDBManager.retrieve_from_vector() (vector_db_manager.py:88-108)
     # ------------------------------------------------------------------
 
@@ -256,7 +258,7 @@ class QdrantAdapter:
             )
             return results.points
         except Exception as e:
-            print(f"Error retrieving vectors: {e}")
+            logger.error("Error retrieving vectors from '%s': %s", collection_name, e)
             return []
 
     # Unused
@@ -297,14 +299,16 @@ class QdrantAdapter:
             )
             return results.points
         except Exception as e:
-            print(f"Error retrieving vectors by payload: {e}")
+            logger.error(
+                "Error retrieving vectors by payload from '%s': %s", collection_name, e
+            )
             return []
 
     class QueryObject:
         query_vector: List[float]
-        keywords: List[str] 
+        keywords: List[str]
         entities: List[str]
-            
+
     def hybrid_retrieve(self, query_objects: List[QueryObject], top_k: int = 5) -> list:
         """
         Retrieve vectors by hybrid search.
@@ -312,9 +316,8 @@ class QdrantAdapter:
         Use keywords and entities for BM25 search
         Combine the results using Reciprocal Rank Fusion (RRF)
         """
-        #TODO: implement
+        # TODO: implement
         pass
-
 
     # ------------------------------------------------------------------
     # Vector deletion
@@ -343,7 +346,7 @@ class QdrantAdapter:
                 document_id=point_id,
                 payload_summary=f"delete vector {point_id} from {collection_name}",
             )
-            print(f"✓ Deleted vector {point_id} from {collection_name}")
+            logger.debug("Deleted vector %s from '%s'", point_id, collection_name)
             return True
         except Exception as e:
             self._record_op(
@@ -354,7 +357,9 @@ class QdrantAdapter:
                 error=str(e),
                 payload_summary=f"delete vector {point_id} from {collection_name}",
             )
-            print(f"⚠️ Error deleting vector {point_id}: {e}")
+            logger.error(
+                "Error deleting vector %s from '%s': %s", point_id, collection_name, e
+            )
             return False
 
     # ------------------------------------------------------------------
@@ -392,5 +397,7 @@ class QdrantAdapter:
                 {"id": str(record.id), "payload": record.payload} for record in records
             ]
         except Exception as e:
-            print(f"Error retrieving all points from '{collection_name}': {e}")
+            logger.error(
+                "Error retrieving all points from '%s': %s", collection_name, e
+            )
             return []

@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from memblocks.logger import get_logger
 from memblocks.services.session import Session
 
 if TYPE_CHECKING:
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
     from memblocks.llm.base import LLMProvider
     from memblocks.storage.qdrant import QdrantAdapter
     from memblocks.storage.embeddings import EmbeddingProvider
+
+logger = get_logger(__name__)
 
 
 class SessionManager:
@@ -85,7 +88,7 @@ class SessionManager:
             "recursive_summary": "",
         }
         await self._mongo.create_session(session_data)
-        print(f"✅ Created session: {session_id} (block: {block_id})")
+        logger.info("Created session: %s (block: %s)", session_id, block_id)
         return self._make_session(
             session_id=session_id,
             user_id=user_id,

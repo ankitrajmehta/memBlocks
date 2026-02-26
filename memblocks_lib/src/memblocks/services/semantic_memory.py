@@ -12,6 +12,7 @@ from memblocks.models.units import (
     SemanticMemoryUnit,
 )
 from memblocks.prompts import PS1_SEMANTIC_PROMPT, PS2_MEMORY_UPDATE_PROMPT
+from memblocks.logger import get_logger
 
 if TYPE_CHECKING:
     from memblocks.config import MemBlocksConfig
@@ -19,6 +20,8 @@ if TYPE_CHECKING:
     from memblocks.storage.embeddings import EmbeddingProvider
     from memblocks.storage.qdrant import QdrantAdapter
     from memblocks.services.transparency import OperationLog, RetrievalLog
+
+logger = get_logger(__name__)
 
 
 class SemanticMemoryService:
@@ -135,7 +138,7 @@ class SemanticMemoryService:
             return extracted
 
         except Exception as e:
-            print(f"⚠️ Failed to extract semantic memories: {e}")
+            logger.warning("Failed to extract semantic memories: %s", e)
             return []
 
     # ------------------------------------------------------------------ #
@@ -194,7 +197,9 @@ class SemanticMemoryService:
             payload = memory_unit.model_dump()
             success = self._qdrant.store_vector(self._collection, new_vector, payload)
             if success:
-                print(f"✓ Added new memory (no similar): {memory_unit.content[:60]}...")
+                logger.debug(
+                    "Added new memory (no similar): %s...", memory_unit.content[:60]
+                )
                 operations.append(
                     MemoryOperation(operation="ADD", content=memory_unit.content)
                 )
@@ -214,8 +219,8 @@ class SemanticMemoryService:
             result = await chain.ainvoke({"input": user_input})
 
         except Exception as e:
-            print(f"⚠️ PS2 conflict resolution failed: {e}")
-            print("   Fallback: Adding memory without conflict check")
+            logger.warning("PS2 conflict resolution failed: %s", e)
+            logger.debug("Fallback: Adding memory without conflict check")
             payload = memory_unit.model_dump()
             success = self._qdrant.store_vector(self._collection, new_vector, payload)
             if success:
@@ -232,7 +237,7 @@ class SemanticMemoryService:
             success = self._qdrant.store_vector(self._collection, new_vector, payload)
             if success:
                 operations_performed.append("ADD new memory")
-                print(f"✓ Added new memory: {memory_unit.content[:60]}...")
+                logger.debug("Added new memory: %s...", memory_unit.content[:60])
                 operations.append(
                     MemoryOperation(operation="ADD", content=memory_unit.content)
                 )
@@ -240,7 +245,7 @@ class SemanticMemoryService:
             operations_performed.append(
                 f"NONE (new): {result.new_memory_operation.reason or 'Redundant'}"
             )
-            print("  Skipped new memory (redundant)")
+            logger.debug("Skipped new memory (redundant)")
             operations.append(
                 MemoryOperation(operation="NONE", content=memory_unit.content)
             )
@@ -249,9 +254,7 @@ class SemanticMemoryService:
         for op in result.existing_memory_operations:
             real_id = id_mapping.get(op.id)
             if not real_id:
-                print(
-                    f"  Warning: Could not map ID {op.id} to real Qdrant ID, skipping"
-                )
+                logger.warning("Could not map ID %s to real Qdrant ID, skipping", op.id)
                 continue
 
             if op.operation == "UPDATE":
@@ -273,8 +276,10 @@ class SemanticMemoryService:
                 )
                 if success:
                     operations_performed.append(f"UPDATE {real_id[:8]}...")
-                    print(
-                        f"Updated memory {real_id[:8]}...: {updated_unit.content[:60]}..."
+                    logger.debug(
+                        "Updated memory %s...: %s...",
+                        real_id[:8],
+                        updated_unit.content[:60],
                     )
                     operations.append(
                         MemoryOperation(
@@ -290,7 +295,7 @@ class SemanticMemoryService:
                 success = self._qdrant.delete_vector(self._collection, real_id)
                 if success:
                     operations_performed.append(f"DELETE {real_id[:8]}...")
-                    print(f"Deleted memory {real_id[:8]}...")
+                    logger.debug("Deleted memory %s...", real_id[:8])
                     operations.append(
                         MemoryOperation(
                             operation="DELETE",
@@ -301,7 +306,7 @@ class SemanticMemoryService:
             else:
                 operations_performed.append(f"NONE {real_id[:8]}...")
 
-        print(f"   Operations: {', '.join(operations_performed)}")
+        logger.debug("Operations: %s", ", ".join(operations_performed))
         return operations
 
     # ------------------------------------------------------------------ #
@@ -358,7 +363,7 @@ class SemanticMemoryService:
         Returns:
             List of lists — one list of SemanticMemoryUnit per query, de-duplicated.
         """
-        #TODO: query_texts = query_expansion(query) -> Returns new queries with keywords and entities for each query
+        # TODO: query_texts = query_expansion(query) -> Returns new queries with keywords and entities for each query
 
         query_vectors = self._embeddings.embed_documents(query_texts)
 

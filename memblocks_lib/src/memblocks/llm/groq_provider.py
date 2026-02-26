@@ -7,9 +7,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel
 
 from memblocks.llm.base import LLMProvider
+from memblocks.logger import get_logger
 
 if TYPE_CHECKING:
     from memblocks.config import MemBlocksConfig
+
+logger = get_logger(__name__)
 
 
 class GroqLLMProvider(LLMProvider):
@@ -72,13 +75,12 @@ class GroqLLMProvider(LLMProvider):
                 )
                 LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
             except ImportError:
-                print(
-                    "⚠️  Arize/openinference packages not installed — "
-                    "monitoring disabled."
+                logger.warning(
+                    "Arize/openinference packages not installed — monitoring disabled."
                 )
         else:
-            print(
-                "⚠️  Arize monitoring disabled (ARIZE_SPACE_ID / ARIZE_API_KEY not set)"
+            logger.debug(
+                "Arize monitoring disabled (ARIZE_SPACE_ID / ARIZE_API_KEY not set)"
             )
 
     # ------------------------------------------------------------------

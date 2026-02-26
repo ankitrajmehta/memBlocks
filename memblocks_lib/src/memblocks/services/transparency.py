@@ -16,6 +16,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
+from memblocks.logger import get_logger
 from memblocks.models.transparency import (
     DBType,
     OperationEntry,
@@ -23,6 +24,8 @@ from memblocks.models.transparency import (
     PipelineRunEntry,
     RetrievalEntry,
 )
+
+logger = get_logger(__name__)
 
 
 # --------------------------------------------------------------------------- #
@@ -345,7 +348,7 @@ class EventBus:
             try:
                 cb(payload)
             except Exception as exc:
-                print(f"⚠️ EventBus callback error for '{event_name}': {exc}")
+                logger.warning("EventBus callback error for '%s': %s", event_name, exc)
 
 
 __all__ = [

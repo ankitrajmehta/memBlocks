@@ -5,12 +5,15 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from memblocks.models.llm_outputs import CoreMemoryOutput
 from memblocks.models.units import CoreMemoryUnit
 from memblocks.prompts import CORE_MEMORY_PROMPT
+from memblocks.logger import get_logger
 
 if TYPE_CHECKING:
     from memblocks.config import MemBlocksConfig
     from memblocks.llm.base import LLMProvider
     from memblocks.storage.mongo import MongoDBAdapter
     from memblocks.services.transparency import OperationLog
+
+logger = get_logger(__name__)
 
 
 class CoreMemoryService:
@@ -102,7 +105,7 @@ class CoreMemoryService:
             )
 
         except Exception as e:
-            print(f"⚠️ Failed to extract core memory: {e}")
+            logger.warning("Failed to extract core memory: %s", e)
             # Return old core memory or empty if extraction fails
             if old_core_memory:
                 return old_core_memory
@@ -133,7 +136,7 @@ class CoreMemoryService:
             )
             return True
         except Exception as e:
-            print(f"⚠️ Failed to store core memory: {e}")
+            logger.error("Failed to store core memory for block %s: %s", block_id, e)
             return False
 
     # ------------------------------------------------------------------ #
@@ -163,7 +166,7 @@ class CoreMemoryService:
                 )
             return None
         except Exception as e:
-            print(f"⚠️ Failed to retrieve core memory: {e}")
+            logger.error("Failed to retrieve core memory for block %s: %s", block_id, e)
             return None
 
     # ------------------------------------------------------------------ #

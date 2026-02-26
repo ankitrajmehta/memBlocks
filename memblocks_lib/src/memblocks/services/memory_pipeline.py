@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from memblocks.models.llm_outputs import SummaryOutput
 from memblocks.models.units import MemoryOperation, ProcessingEvent, SemanticMemoryUnit
 from memblocks.prompts import SUMMARY_SYSTEM_PROMPT
+from memblocks.logger import get_logger
 
 if TYPE_CHECKING:
     from memblocks.config import MemBlocksConfig
@@ -13,6 +14,8 @@ if TYPE_CHECKING:
     from memblocks.services.core_memory import CoreMemoryService
     from memblocks.services.semantic_memory import SemanticMemoryService
     from memblocks.services.transparency import OperationLog, ProcessingHistory
+
+logger = get_logger(__name__)
 
 
 class MemoryPipeline:
@@ -106,31 +109,36 @@ class MemoryPipeline:
                 {"run_id": run_id, "message_count": len(messages)},
             )
 
-        print(f"\n🔄 MEMORY PIPELINE START ({run_id})")
-        print(f"   Processing {len(messages)} messages for block {block_id}...")
-
+        logger.info(
+            "Memory pipeline started: %s — processing %d messages for block %s",
+            run_id,
+            len(messages),
+            block_id,
+        )
         all_operations: List[MemoryOperation] = []
 
         try:
             # ---- STEP 1: Semantic Memory ----
-            print("   → STEP 1: Semantic Extraction...")
+            logger.debug("Step 1: Semantic Extraction")
             semantic_memories = await self._semantic.extract(messages)
-            print(f"   ✓ Extracted {len(semantic_memories)} semantic memories")
+            logger.debug("Extracted %d semantic memories", len(semantic_memories))
 
             for mem in semantic_memories:
                 ops = await self._semantic.store(mem)
                 all_operations.extend(ops)
-            print(f"   ✓ Stored semantic memories ({len(all_operations)} operations)")
+            logger.debug(
+                "Stored semantic memories (%d operations)", len(all_operations)
+            )
 
             # ---- STEP 2: Core Memory ----
-            print("   → STEP 2: Core Memory Update...")
+            logger.debug("Step 2: Core Memory Update")
             await self._core.update(block_id=block_id, messages=messages)
-            print("   ✓ Core memory updated")
+            logger.debug("Core memory updated")
 
             # ---- STEP 3: Recursive Summary ----
-            print("   → STEP 3: Recursive Summary Generation...")
+            logger.debug("Step 3: Recursive Summary Generation")
             new_summary = await self._generate_summary(messages, current_summary)
-            print("   ✓ Summary generated")
+            logger.debug("Summary generated")
 
             # Transparency
             ProcessingEvent(
@@ -149,7 +157,7 @@ class MemoryPipeline:
             if self._bus:
                 self._bus.publish("on_pipeline_completed", {"run_id": run_id})
 
-            print(f"✅ MEMORY PIPELINE COMPLETE ({run_id})")
+            logger.info("Memory pipeline complete: %s", run_id)
             return new_summary
 
         except Exception as exc:
@@ -160,7 +168,7 @@ class MemoryPipeline:
                     "on_pipeline_failed",
                     {"run_id": run_id, "error": str(exc)},
                 )
-            print(f"❌ Memory pipeline failed ({run_id}): {exc}")
+            logger.error("Memory pipeline failed (%s): %s", run_id, exc)
             raise
 
     # ------------------------------------------------------------------ #
@@ -203,5 +211,5 @@ class MemoryPipeline:
             return result.summary
 
         except Exception as e:
-            print(f"⚠️ Failed to generate summary: {e}")
+            logger.warning("Failed to generate recursive summary: %s", e)
             return previous_summary

@@ -2,8 +2,12 @@
 
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+from memblocks.logger import get_logger
+
 if TYPE_CHECKING:
     from memblocks.storage.mongo import MongoDBAdapter
+
+logger = get_logger(__name__)
 
 
 class UserManager:
@@ -43,11 +47,11 @@ class UserManager:
         """
         existing = await self._mongo.get_user(user_id)
         if existing:
-            print(f"⚠️ User {user_id} already exists")
+            logger.warning("User %s already exists", user_id)
             return existing
 
         user_doc = await self._mongo.create_user(user_id, metadata)
-        print(f"✅ Created user: {user_id}")
+        logger.info("Created user: %s", user_id)
         return user_doc
 
     async def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -92,5 +96,5 @@ class UserManager:
         user = await self._mongo.get_user(user_id)
         if not user:
             user = await self._mongo.create_user(user_id, metadata)
-            print(f"✅ Created new user: {user_id}")
+            logger.info("Created new user: %s", user_id)
         return user

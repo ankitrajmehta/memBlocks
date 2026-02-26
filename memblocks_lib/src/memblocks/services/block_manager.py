@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from memblocks.models.block import MemoryBlock, MemoryBlockMetaData
 from memblocks.services.block import Block
+from memblocks.logger import get_logger
 
 if TYPE_CHECKING:
     from memblocks.config import MemBlocksConfig
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
     from memblocks.storage.mongo import MongoDBAdapter
     from memblocks.storage.qdrant import QdrantAdapter
     from memblocks.llm.base import LLMProvider
+
+logger = get_logger(__name__)
 
 
 class BlockManager:
@@ -101,12 +104,12 @@ class BlockManager:
         if create_semantic:
             semantic_collection = f"{block_id}_semantic"
             self._qdrant.create_collection(semantic_collection)
-            print(f"   ✓ Created semantic collection: {semantic_collection}")
+            logger.info("Created semantic collection: %s", semantic_collection)
 
         if create_resource:
             resource_collection = f"{block_id}_resource"
             self._qdrant.create_collection(resource_collection)
-            print(f"   ✓ Created resource collection: {resource_collection}")
+            logger.info("Created resource collection: %s", resource_collection)
 
         if create_core:
             core_memory_block_id = block_id
@@ -115,7 +118,7 @@ class BlockManager:
                 persona_content="",
                 human_content="",
             )
-            print(f"   ✓ Created core memory document: {block_id}")
+            logger.info("Created core memory document for block: %s", block_id)
 
         # Persist block document
         metadata = MemoryBlockMetaData(
@@ -141,7 +144,7 @@ class BlockManager:
         await self._mongo.create_memory_block(user_id, block_dict)
         await self._mongo.add_block_to_user(user_id, block_id)
 
-        print(f"✅ Created memory block: {block_id}")
+        logger.info("Created memory block: %s", block_id)
         return self._make_block(
             block_id=block_id,
             name=name,

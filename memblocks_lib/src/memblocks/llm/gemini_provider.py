@@ -7,9 +7,12 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel
 
 from memblocks.llm.base import LLMProvider
+from memblocks.logger import get_logger
 
 if TYPE_CHECKING:
     from memblocks.config import MemBlocksConfig
+
+logger = get_logger(__name__)
 
 
 class GeminiLLMProvider(LLMProvider):
@@ -55,13 +58,12 @@ class GeminiLLMProvider(LLMProvider):
                 )
                 LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
             except ImportError:
-                print(
-                    "⚠️  Arize/openinference packages not installed — "
-                    "monitoring disabled."
+                logger.warning(
+                    "Arize/openinference packages not installed — monitoring disabled."
                 )
         else:
-            print(
-                "⚠️  Arize monitoring disabled (ARIZE_SPACE_ID / ARIZE_API_KEY not set)"
+            logger.debug(
+                "Arize monitoring disabled (ARIZE_SPACE_ID / ARIZE_API_KEY not set)"
             )
 
     # ------------------------------------------------------------------
@@ -137,18 +139,18 @@ class GeminiLLMProvider(LLMProvider):
             google_api_key=self._api_key,
         )
         response = await llm.ainvoke(messages)
-        
+
         # Handle Gemini's structured response format
         content = response.content
         if isinstance(content, list):
             # Extract text from list of content parts
             text_parts = []
             for part in content:
-                if isinstance(part, dict) and 'text' in part:
-                    text_parts.append(part['text'])
-                elif hasattr(part, 'text'):
+                if isinstance(part, dict) and "text" in part:
+                    text_parts.append(part["text"])
+                elif hasattr(part, "text"):
                     text_parts.append(part.text)
-            return ''.join(text_parts)
-        
+            return "".join(text_parts)
+
         # Fallback to string content
         return str(content)
