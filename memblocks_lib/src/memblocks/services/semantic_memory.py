@@ -400,7 +400,7 @@ class SemanticMemoryService:
                     query_text=query_texts[0] if query_texts else "",
                     source="semantic",
                     num_results=len(flat_memories),
-                    memory_summaries=[m.content[:80] for m in flat_memories[:5]],
+                    memory_summaries=[m.content[:80] for m in flat_memories],
                 )
             )
         if self._bus is not None:

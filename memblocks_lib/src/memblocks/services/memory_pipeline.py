@@ -132,7 +132,7 @@ class MemoryPipeline:
 
             # ---- STEP 2: Core Memory ----
             logger.debug("Step 2: Core Memory Update")
-            await self._core.update(block_id=block_id, messages=messages)
+            new_core = await self._core.update(block_id=block_id, messages=messages)
             logger.debug("Core memory updated")
 
             # ---- STEP 3: Recursive Summary ----
@@ -142,6 +142,8 @@ class MemoryPipeline:
 
             # Transparency
             ProcessingEvent(
+                event_id=run_id,
+                timestamp=datetime.utcnow().isoformat(),
                 messages_processed=len(messages),
                 operations=all_operations,
             )

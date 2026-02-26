@@ -308,7 +308,6 @@ class MemBlocksConfig(BaseSettings):
 |-------|---------|---------|-------------|
 | `memory_window` | `MEMORY_WINDOW` | `10` | Messages before pipeline trigger |
 | `keep_last_n` | `KEEP_LAST_N` | `5` | Messages retained after flush |
-| `max_concurrent_processing` | `MAX_CONCURRENT_PROCESSING` | `3` | Max parallel pipeline runs |
 
 ### Dynamic Collection Naming
 
@@ -1490,7 +1489,6 @@ User Message 11  ────────► Next turn begins (if user awaited)
 | Window size | `memory_window` | 10 | Messages before trigger |
 | Keep last N | `keep_last_n` | 5 | Messages retained after flush |
 
-**Note:** `max_concurrent_processing` was removed — user controls concurrency via `asyncio.create_task()` or awaiting directly.
 
 ---
 

@@ -261,15 +261,6 @@ config = MemBlocksConfig(
 client = MemBlocksClient(config)
 ```
 
-**Popular Gemini model identifiers:**
-
-| Model | Notes |
-|-------|-------|
-| `gemini-2.0-flash` | Fast, cost-efficient — recommended default |
-| `gemini-2.0-flash-lite` | Lightest and fastest |
-| `gemini-1.5-pro` | Highest capability, 2M token context |
-| `gemini-1.5-flash` | Balanced speed/capability |
-
 ### Using a Custom Provider
 
 You can bypass the built-in providers entirely by passing your own `LLMProvider` instance directly:

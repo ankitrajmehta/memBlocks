@@ -105,19 +105,14 @@ class MemBlocksConfig(BaseSettings):
     # Memory pipeline behaviour
     # -------------------------------------------------------------------------
     memory_window: int = Field(
-        10,
+        5,
         validation_alias="MEMORY_WINDOW",
         description="Number of messages to accumulate before triggering memory processing.",
     )
     keep_last_n: int = Field(
-        5,
+        2,
         validation_alias="KEEP_LAST_N",
         description="Messages kept in active context after the window is processed.",
-    )
-    max_concurrent_processing: int = Field(
-        3,
-        validation_alias="MAX_CONCURRENT_PROCESSING",
-        description="Maximum number of concurrent background memory processing tasks.",
     )
 
     # -------------------------------------------------------------------------
