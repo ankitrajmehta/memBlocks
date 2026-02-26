@@ -2,10 +2,14 @@
 
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from memblocks.models.llm_outputs import SemanticMemoriesOutput, PS2MemoryUpdateOutput
+from memblocks.models.llm_outputs import (
+    SemanticMemoriesOutput,
+    PS2MemoryUpdateOutput,
+    ExistingSemanticMemoryUnitForPS2,
+)
 from memblocks.models.units import (
     MemoryOperation,
     MemoryUnitMetaData,
@@ -98,7 +102,9 @@ class SemanticMemoryService:
         conversation_text = "\n".join(
             [f"{msg['role'].upper()}: {msg['content']}" for msg in messages]
         )
+        current_time = datetime.now(timezone.utc).isoformat()
         user_input = (
+            f"Current time (ISO 8601): {current_time}\n\n"
             f"Conversation to analyze:\n\n{conversation_text}\n\n"
             f"Extract structured semantic memories. Analyze each significant piece of information."
         )
@@ -111,7 +117,6 @@ class SemanticMemoryService:
             )
             result = await chain.ainvoke({"input": user_input})
 
-            current_time = datetime.now().isoformat()
             extracted: List[SemanticMemoryUnit] = []
 
             for item in result.memories:
@@ -126,7 +131,7 @@ class SemanticMemoryService:
                     type=item.type,
                     source="conversation",
                     confidence=item.confidence,
-                    memory_time=(current_time if item.type == "event" else None),
+                    memory_time=(item.memory_time if item.type == "event" else None),
                     entities=item.entities,
                     updated_at=current_time,
                     meta_data=MemoryUnitMetaData(usage=[current_time]),
@@ -166,7 +171,7 @@ class SemanticMemoryService:
         """
         from qdrant_client.models import ScoredPoint  # local import to keep layer clean
 
-        current_time = datetime.now().isoformat()
+        current_time = datetime.now(timezone.utc).isoformat()
         operations: List[MemoryOperation] = []
 
         text_to_embed = memory_unit.embedding_text or memory_unit.content
@@ -179,22 +184,35 @@ class SemanticMemoryService:
         new_memory_dict = memory_unit.model_dump()
         new_memory_dict["updated_at"] = current_time
 
-        # Build mapping: simple_index → real Qdrant UUID
+        # Build mapping: simple_index → real Qdrant UUID and original ScoredPoint
         existing_memories_list: List[Dict[str, Any]] = []
         id_mapping: Dict[str, str] = {}
+        point_mapping: Dict[
+            str, Any
+        ] = {}  # simple_id → ScoredPoint (for reconstruction)
         existing_contents: Dict[str, str] = {}
 
         for idx, point in enumerate(similar_results):
             if isinstance(point, ScoredPoint):
                 simple_id = str(idx)
                 id_mapping[simple_id] = point.id
-                existing_mem = {**point.payload, "id": simple_id}
+                point_mapping[simple_id] = point
+                existing_mem = ExistingSemanticMemoryUnitForPS2(
+                    id=simple_id,
+                    memory_time=point.payload.get("memory_time"),
+                    updated_at=point.payload.get("updated_at"),
+                    content=point.payload.get("content", ""),
+                    type=point.payload.get("type", ""),
+                    entities=point.payload.get("entities", []),
+                    keywords=point.payload.get("keywords", []),
+                    confidence=point.payload.get("confidence", 0.0),
+                ).model_dump()
                 existing_memories_list.append(existing_mem)
                 existing_contents[simple_id] = point.payload.get("content", "")
 
         # ---- No similar memories → just ADD ----
         if not existing_memories_list:
-            payload = memory_unit.model_dump()
+            payload = memory_unit.model_dump(exclude={"memory_id"})
             success = self._qdrant.store_vector(self._collection, new_vector, payload)
             if success:
                 logger.debug(
@@ -221,7 +239,7 @@ class SemanticMemoryService:
         except Exception as e:
             logger.warning("PS2 conflict resolution failed: %s", e)
             logger.debug("Fallback: Adding memory without conflict check")
-            payload = memory_unit.model_dump()
+            payload = memory_unit.model_dump(exclude={"memory_id"})
             success = self._qdrant.store_vector(self._collection, new_vector, payload)
             if success:
                 operations.append(
@@ -233,7 +251,7 @@ class SemanticMemoryService:
 
         # Handle new memory decision
         if result.new_memory_operation.operation == "ADD":
-            payload = memory_unit.model_dump()
+            payload = memory_unit.model_dump(exclude={"memory_id"})
             success = self._qdrant.store_vector(self._collection, new_vector, payload)
             if success:
                 operations_performed.append("ADD new memory")
@@ -258,20 +276,59 @@ class SemanticMemoryService:
                 continue
 
             if op.operation == "UPDATE":
-                op.updated_memory["id"] = real_id
-                updated_unit = SemanticMemoryUnit(**op.updated_memory)
+                if op.updated_memory is None:
+                    logger.warning(
+                        "UPDATE operation for ID %s has no updated_memory, skipping",
+                        op.id,
+                    )
+                    continue
+
+                updated_mem = op.updated_memory  # ExistingSemanticMemoryUnitForPS2
+                original_point = point_mapping[op.id]
+
+                # Reconstruct embedding_text from the updated content/keywords/entities
+                new_embedding_text = (
+                    f"{updated_mem.content}\n"
+                    f"Keywords: {', '.join(updated_mem.keywords)}\n"
+                    f"Entities: {', '.join(updated_mem.entities)}"
+                ).strip()
+
+                # Preserve meta_data from original, append current_time to usage list
+                original_meta = original_point.payload.get("meta_data") or {}
+                existing_usage: List[str] = original_meta.get("usage", [])
+                updated_usage = existing_usage + [current_time]
+                updated_meta = MemoryUnitMetaData(
+                    usage=updated_usage,
+                    status=original_meta.get("status", "active"),
+                    message_ids=original_meta.get("message_ids", []),
+                )
+
+                # Reconstruct the full SemanticMemoryUnit
+                old_content = existing_contents.get(op.id, "")
+                updated_unit = SemanticMemoryUnit(
+                    content=updated_mem.content,
+                    type=updated_mem.type,
+                    keywords=updated_mem.keywords,
+                    entities=updated_mem.entities,
+                    confidence=updated_mem.confidence,
+                    memory_time=updated_mem.memory_time,
+                    updated_at=current_time,
+                    embedding_text=new_embedding_text,
+                    source=original_point.payload.get("source"),
+                    meta_data=updated_meta,
+                    memory_id=real_id,
+                )
+
                 updated_text = updated_unit.embedding_text or updated_unit.content
                 updated_vector = self._embeddings.embed_text(updated_text)
 
-                payload_without_id = {
-                    k: v for k, v in op.updated_memory.items() if k != "id"
-                }
-                old_content = existing_contents.get(op.id, "")
+                # Payload excludes memory_id (stored as the Qdrant point ID, not in payload)
+                payload = updated_unit.model_dump(exclude={"memory_id"})
 
                 success = self._qdrant.store_vector(
                     self._collection,
                     updated_vector,
-                    payload_without_id,
+                    payload,
                     point_id=real_id,
                 )
                 if success:
@@ -370,7 +427,10 @@ class SemanticMemoryService:
         def _search(vector: List[float]) -> List[SemanticMemoryUnit]:
             # Should do keyword matching (BM25) & Entity search
             results = self._qdrant.retrieve_from_vector(self._collection, vector, top_k)
-            return [SemanticMemoryUnit(**hit.payload) for hit in results]
+            return [
+                SemanticMemoryUnit(**hit.payload, memory_id=str(hit.id))
+                for hit in results
+            ]
 
         with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
             grouped_results = list(executor.map(_search, query_vectors))
@@ -400,6 +460,7 @@ class SemanticMemoryService:
                     query_text=query_texts[0] if query_texts else "",
                     source="semantic",
                     num_results=len(flat_memories),
+                    memory_ids=[m.memory_id for m in flat_memories],
                     memory_summaries=[m.content[:80] for m in flat_memories],
                 )
             )

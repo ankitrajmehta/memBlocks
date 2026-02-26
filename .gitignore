@@ -24,3 +24,7 @@ build/
 .DS_Store
 *.log
 
+operation_log.json
+operation_summary.json
+retrieval_log.json
+processing_history.json

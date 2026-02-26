@@ -45,20 +45,20 @@ async def save_transparency_data(client: MemBlocksClient) -> None:
     """Overwrite transparency files with the latest data (fixed filenames for real-time updates)."""
     logger = logging.getLogger(__name__)
 
-    operation_log = client.get_operation_log()
-    if operation_log:
-        ops = operation_log.get_entries(limit=1000)
-        ops_data = [op.model_dump(mode="json") for op in ops]
-        ops_file = LOG_DIR / "operation_log.json"
-        with open(ops_file, "w") as f:
-            json.dump(ops_data, f, indent=2)
-        # logger.debug(f"Updated {ops_file}")
+    # operation_log = client.get_operation_log()
+    # if operation_log:
+    #     ops = operation_log.get_entries(limit=1000)
+    #     ops_data = [op.model_dump(mode="json") for op in ops]
+    #     ops_file = LOG_DIR / "operation_log.json"
+    #     with open(ops_file, "w") as f:
+    #         json.dump(ops_data, f, indent=2)
+    #     # logger.debug(f"Updated {ops_file}")
 
-        summary = operation_log.summary()
-        summary_file = LOG_DIR / "operation_summary.json"
-        with open(summary_file, "w") as f:
-            json.dump(summary, f, indent=2, default=str)
-        # logger.debug(f"Updated {summary_file}")
+    #     summary = operation_log.summary()
+    #     summary_file = LOG_DIR / "operation_summary.json"
+    #     with open(summary_file, "w") as f:
+    #         json.dump(summary, f, indent=2, default=str)
+    #     # logger.debug(f"Updated {summary_file}")
 
     retrieval_log = client.get_retrieval_log()
     if retrieval_log:

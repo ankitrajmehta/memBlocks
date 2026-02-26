@@ -4,7 +4,7 @@ Copied from llm/output_models.py — zero service or DB imports.
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal, Dict
+from typing import List, Optional, Literal
 
 
 class SemanticExtractionOutput(BaseModel):
@@ -13,8 +13,19 @@ class SemanticExtractionOutput(BaseModel):
     keywords: List[str] = Field(description="Key terms and concepts from the content")
     content: str = Field(description="The actual memory content")
     type: str = Field(description="Memory type")
-    entities: List[str] = Field(description="Named entities (people, places, organizations)")
+    entities: List[str] = Field(
+        description="Named entities (people, places, organizations)"
+    )
     confidence: float = Field(description="Confidence score between 0 and 1")
+    memory_time: Optional[str] = Field(
+        default=None,
+        description=(
+            "ISO 8601 timestamp of when the event occurred. "
+            "Only for type='event'. Compute from the current time provided in the input "
+            "and any relative cues in the conversation (e.g. 'yesterday', 'last week'). "
+            "Leave null if the memory type is not 'event' or if no temporal information is available."
+        ),
+    )
 
 
 class SemanticMemoriesOutput(BaseModel):
@@ -23,6 +34,27 @@ class SemanticMemoriesOutput(BaseModel):
     memories: List[SemanticExtractionOutput] = Field(
         description="List of extracted semantic memories"
     )
+
+
+class ExistingSemanticMemoryUnitForPS2(BaseModel):
+    """Input model passed to PS2 for each existing memory during conflict resolution."""
+
+    id: str = Field(description="Qdrant point ID of the existing memory")
+    memory_time: Optional[str] = Field(
+        default=None,
+        description="Original memory_time of the existing memory, if available",
+    )
+    updated_at: Optional[str] = Field(
+        default=None,
+        description="Original updated_at timestamp of the existing memory, if available",
+    )
+    keywords: List[str] = Field(
+        description="Key terms and concepts from the existing memory"
+    )
+    content: str = Field(description="Content of the existing memory")
+    type: str = Field(description="Type of the existing memory")
+    entities: List[str] = Field(description="Named entities in the existing memory")
+    confidence: float = Field(description="Confidence score of the existing memory")
 
 
 class CoreMemoryOutput(BaseModel):
@@ -62,8 +94,13 @@ class PS2ExistingMemoryOperation(BaseModel):
     operation: Literal["UPDATE", "DELETE", "NONE"] = Field(
         description="Operation to perform on the existing memory"
     )
-    updated_memory: Optional[Dict] = Field(
-        default=None, description="Complete updated memory dict for UPDATE operation"
+    updated_memory: Optional["ExistingSemanticMemoryUnitForPS2"] = Field(
+        default=None,
+        description=(
+            "Updated memory for UPDATE operation. Contains the same fields as the existing "
+            "memory input (id, content, keywords, type, entities, confidence, memory_time, updated_at) "
+            "with changes applied. Use the same simple integer ID as the input."
+        ),
     )
     reason: Optional[str] = Field(
         default=None, description="Explanation for the decision"
@@ -84,6 +121,7 @@ class PS2MemoryUpdateOutput(BaseModel):
 __all__ = [
     "SemanticExtractionOutput",
     "SemanticMemoriesOutput",
+    "ExistingSemanticMemoryUnitForPS2",
     "CoreMemoryOutput",
     "SummaryOutput",
     "PS2NewMemoryOperation",

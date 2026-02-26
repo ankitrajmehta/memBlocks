@@ -16,9 +16,6 @@ class MemoryUnitMetaData(BaseModel):
     status: Optional[Literal["active", "archived", "deleted"]] = Field(
         "active", description="The current status of the memory unit."
     )
-    Parent_Memory_ids: Optional[list[str]] = Field(
-        [], description="List of IDs of parent memories related to this memory unit."
-    )
     message_ids: Optional[list[str]] = Field(
         [], description="List of message IDs associated with this memory unit."
     )
@@ -39,6 +36,12 @@ class SemanticMemoryUnit(BaseModel):
         ...,
         description="The type of memory: 'event' for time-specific events, 'factual' for general knowledge.",
     )
+
+    memory_id: Optional[str] = Field(
+        None,
+        description="Unique identifier for the memory unit, typically the Qdrant point ID after storage. Not present before storage.",
+    )
+
     source: Optional[str] = Field(
         None,
         description="Source of the memory information, e.g., 'user', 'document', etc.",
