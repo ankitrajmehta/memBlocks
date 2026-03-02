@@ -3,19 +3,28 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
 
 from memblocks.models.llm_outputs import (
     SemanticMemoriesOutput,
     PS2MemoryUpdateOutput,
     ExistingSemanticMemoryUnitForPS2,
+    QueryExpansionOutput,
+    HypotheticalParagraphsOutput,
+    ReRankingOutput,
 )
 from memblocks.models.units import (
     MemoryOperation,
     MemoryUnitMetaData,
     SemanticMemoryUnit,
 )
-from memblocks.prompts import PS1_SEMANTIC_PROMPT, PS2_MEMORY_UPDATE_PROMPT
+from memblocks.prompts import (
+    PS1_SEMANTIC_PROMPT,
+    PS2_MEMORY_UPDATE_PROMPT,
+    QUERY_EXPANSION_PROMPT,
+    HYPOTHETICAL_PARAGRAPH_PROMPT,
+    RERANKING_PROMPT,
+)
 from memblocks.logger import get_logger
 
 if TYPE_CHECKING:
@@ -34,7 +43,7 @@ class SemanticMemoryService:
     - PS1 extraction from conversation
     - PS2 conflict resolution
     - Vector storage via QdrantAdapter
-    - Vector retrieval
+    - Enhanced vector retrieval with query expansion, hypothetical paragraphs, and re-ranking
 
     Replaces:
     - SemanticMemorySection.extract_semantic_memories() (sections.py:53-125)
@@ -44,6 +53,9 @@ class SemanticMemoryService:
 
     Bug Fix 3: store() return type is now correctly List[MemoryOperation]
     (old store_memory() was annotated -> bool but returned List[MemoryOperation]).
+    
+    Enhancement: retrieve() now supports query expansion, hypothetical paragraph generation,
+    and LLM-based re-ranking for improved semantic retrieval coverage and relevance.
     """
 
     def __init__(
@@ -400,32 +412,107 @@ class SemanticMemoryService:
         return memories
 
     # ------------------------------------------------------------------ #
-    # Retrieval
+    # Enhanced Retrieval with Query Expansion, Hypothetical Paragraphs, and Re-ranking
     # ------------------------------------------------------------------ #
 
-    def retrieve(
-        self,
-        query_texts: List[str],
-        top_k: int = 5,
-    ) -> List[List[SemanticMemoryUnit]]:
+    async def _expand_query(self, query: str) -> List[str]:
         """
-        Retrieve top-k semantically similar memories for each query text.
-
-        Mirrors SemanticMemorySection.retrieve_memories() (sections.py:344-378).
-
+        Generate expanded queries with additional related terms for better retrieval coverage.
+        
         Args:
-            query_texts: List of query strings.
-            top_k: Number of results per query.
-
+            query: Original query text.
+            
         Returns:
-            List of lists — one list of SemanticMemoryUnit per query, de-duplicated.
+            List of expanded queries including the original.
         """
-        # TODO: query_texts = query_expansion(query) -> Returns new queries with keywords and entities for each query
+        if not self._config.retrieval_enable_query_expansion:
+            logger.debug("Query expansion disabled, returning original query only")
+            return [query]
+        
+        try:
+            num_expansions = self._config.retrieval_num_query_expansions
+            prompt = QUERY_EXPANSION_PROMPT.format(num_expansions=num_expansions)
+            
+            chain = self._llm.create_structured_chain(
+                system_prompt=prompt,
+                pydantic_model=QueryExpansionOutput,
+                temperature=0.3,  # Slightly creative for expansion
+            )
+            
+            user_input = f"Original Query: {query}\n\nGenerate {num_expansions} expanded queries."
+            result = await chain.ainvoke({"input": user_input})
+            
+            # Include original query + expanded queries
+            all_queries = [query] + result.expanded_queries
+            logger.debug(
+                "Query expansion: %d queries generated from original: %s",
+                len(all_queries),
+                query[:50],
+            )
+            return all_queries
+            
+        except Exception as e:
+            logger.warning("Query expansion failed: %s. Using original query only.", e)
+            return [query]
 
+    async def _generate_hypothetical_paragraphs(self, query: str) -> List[str]:
+        """
+        Generate hypothetical answer paragraphs for the query (HyDE technique).
+        
+        Args:
+            query: Original query text.
+            
+        Returns:
+            List of hypothetical answer paragraphs.
+        """
+        if not self._config.retrieval_enable_hypothetical_paragraphs:
+            logger.debug("Hypothetical paragraphs disabled")
+            return []
+        
+        try:
+            num_paragraphs = self._config.retrieval_num_hypothetical_paragraphs
+            prompt = HYPOTHETICAL_PARAGRAPH_PROMPT.format(num_paragraphs=num_paragraphs)
+            
+            chain = self._llm.create_structured_chain(
+                system_prompt=prompt,
+                pydantic_model=HypotheticalParagraphsOutput,
+                temperature=0.5,  # More creative for generating hypothetical answers
+            )
+            
+            user_input = f"Query: {query}\n\nGenerate {num_paragraphs} hypothetical answer paragraphs."
+            result = await chain.ainvoke({"input": user_input})
+            
+            logger.debug(
+                "Generated %d hypothetical paragraphs for query: %s",
+                len(result.paragraphs),
+                query[:50],
+            )
+            return result.paragraphs
+            
+        except Exception as e:
+            logger.warning("Hypothetical paragraph generation failed: %s", e)
+            return []
+
+    def _retrieve_with_vectors(
+        self, 
+        query_texts: List[str], 
+        top_k: int
+    ) -> Tuple[List[SemanticMemoryUnit], Set[str]]:
+        """
+        Retrieve memories using vector search for multiple query texts.
+        
+        Args:
+            query_texts: List of query strings (original + expanded + hypothetical).
+            top_k: Number of results per query.
+            
+        Returns:
+            Tuple of (deduplicated memories, set of seen memory IDs).
+        """
+        logger.debug("Retrieving with %d query variations, top_k=%d", len(query_texts), top_k)
+        
         query_vectors = self._embeddings.embed_documents(query_texts)
 
         def _search(vector: List[float]) -> List[SemanticMemoryUnit]:
-            # Should do keyword matching (BM25) & Entity search
             results = self._qdrant.retrieve_from_vector(self._collection, vector, top_k)
             return [
                 SemanticMemoryUnit(**hit.payload, memory_id=str(hit.id))
@@ -435,43 +522,203 @@ class SemanticMemoryService:
         with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
             grouped_results = list(executor.map(_search, query_vectors))
 
-        # De-duplicate across query groups
-        seen_contents: set = set()
-        deduplicated: List[List[SemanticMemoryUnit]] = []
+        # De-duplicate by memory_id (not content, to preserve uniqueness properly)
+        seen_ids: Set[str] = set()
+        deduplicated_memories: List[SemanticMemoryUnit] = []
 
         for group in grouped_results:
-            unique_group: List[SemanticMemoryUnit] = []
             for memory in group:
-                if memory.content not in seen_contents:
-                    seen_contents.add(memory.content)
-                    unique_group.append(memory)
-            deduplicated.append(unique_group)
+                if memory.memory_id and memory.memory_id not in seen_ids:
+                    seen_ids.add(memory.memory_id)
+                    deduplicated_memories.append(memory)
 
-        # Reranking
-        # Should return List[SemanticMemoryUnits]
+        logger.debug(
+            "Retrieved %d unique memories from %d query vectors",
+            len(deduplicated_memories),
+            len(query_vectors),
+        )
+        
+        return deduplicated_memories, seen_ids
 
-        # Transparency: log retrieval
-        if self._retrieval_log is not None:
-            from memblocks.models.transparency import RetrievalEntry
-
-            flat_memories = [m for group in deduplicated for m in group]
-            self._retrieval_log.record(
-                RetrievalEntry(
-                    query_text=query_texts[0] if query_texts else "",
-                    source="semantic",
-                    num_results=len(flat_memories),
-                    memory_ids=[m.memory_id for m in flat_memories],
-                    memory_summaries=[m.content[:80] for m in flat_memories],
-                )
-            )
-        if self._bus is not None:
-            self._bus.publish(
-                "on_memory_retrieved",
+    async def _rerank_memories(
+        self, 
+        query: str, 
+        memories: List[SemanticMemoryUnit]
+    ) -> List[SemanticMemoryUnit]:
+        """
+        Re-rank retrieved memories using LLM-based relevance assessment.
+        
+        Args:
+            query: Original query text.
+            memories: List of memories to re-rank.
+            
+        Returns:
+            Re-ranked list of memories, ordered by relevance.
+        """
+        if not self._config.retrieval_enable_reranking or not memories:
+            logger.debug("Re-ranking disabled or no memories to rank")
+            return memories
+        
+        try:
+            # Prepare memories for re-ranking
+            memories_data = [
                 {
-                    "source": "semantic",
-                    "collection": self._collection,
-                    "num_results": sum(len(g) for g in deduplicated),
-                },
+                    "memory_id": m.memory_id or "",
+                    "content": m.content,
+                    "type": m.type,
+                    "keywords": m.keywords or [],
+                    "entities": m.entities or [],
+                }
+                for m in memories
+            ]
+            
+            chain = self._llm.create_structured_chain(
+                system_prompt=RERANKING_PROMPT,
+                pydantic_model=ReRankingOutput,
+                temperature=0.0,  # Deterministic for ranking
             )
+            
+            user_input = (
+                f"Original Query: {query}\n\n"
+                f"Retrieved Memories:\n{json.dumps(memories_data, indent=2)}\n\n"
+                f"Re-rank these memories by relevance to the query."
+            )
+            
+            result = await chain.ainvoke({"input": user_input})
+            
+            # Create a mapping from memory_id to original memory
+            memory_map = {m.memory_id: m for m in memories if m.memory_id}
+            
+            # Reconstruct ordered list based on re-ranking
+            reranked: List[SemanticMemoryUnit] = []
+            for ranked in result.ranked_memories:
+                if ranked.memory_id in memory_map:
+                    memory = memory_map[ranked.memory_id]
+                    # Optionally store relevance info in metadata
+                    logger.debug(
+                        "Memory %s: score=%.2f, reason=%s",
+                        ranked.memory_id[:8],
+                        ranked.relevance_score,
+                        ranked.relevance_reason[:60],
+                    )
+                    reranked.append(memory)
+            
+            logger.debug(
+                "Re-ranked %d memories for query: %s",
+                len(reranked),
+                query[:50],
+            )
+            
+            return reranked
+            
+        except Exception as e:
+            logger.warning("Re-ranking failed: %s. Returning original order.", e)
+            return memories
 
-        return deduplicated
+    async def retrieve(
+        self,
+        query_texts: List[str],
+        top_k: int = 5,
+    ) -> List[List[SemanticMemoryUnit]]:
+        """
+        Retrieve top-k semantically similar memories for each query text with enhanced retrieval.
+
+        Enhanced Pipeline:
+        1. Query Expansion: Generate alternative query formulations
+        2. Hypothetical Paragraphs: Generate potential answer paragraphs (HyDE)
+        3. Vector Search: Retrieve using all query variations
+        4. Re-ranking: Use LLM to re-rank results by relevance
+        5. Deduplication: Remove duplicates and return final results
+
+        Mirrors SemanticMemorySection.retrieve_memories() (sections.py:344-378) but with
+        significant enhancements for better retrieval coverage and relevance.
+
+        Args:
+            query_texts: List of query strings.
+            top_k: Number of results per query (before re-ranking and final selection).
+
+        Returns:
+            List of lists — one list of SemanticMemoryUnit per original query,
+            enhanced and de-duplicated.
+        """
+        # Process each query independently
+        all_results: List[List[SemanticMemoryUnit]] = []
+        
+        for query in query_texts:
+            logger.info("Processing retrieval for query: %s", query[:60])
+            
+            # Track metadata for transparency logging
+            expanded_queries: List[str] = []
+            hypothetical_paragraphs: List[str] = []
+            
+            try:
+                # Step 1: Query Expansion
+                expanded_queries = await self._expand_query(query)
+                
+                # Step 2: Hypothetical Paragraph Generation
+                hypothetical_paragraphs = await self._generate_hypothetical_paragraphs(query)
+                
+                # Step 3: Combine all query variations for retrieval
+                all_query_texts = expanded_queries + hypothetical_paragraphs
+                
+                # Step 4: Vector Search
+                top_k_per_query = self._config.retrieval_top_k_per_query
+                retrieved_memories, seen_ids = self._retrieve_with_vectors(
+                    all_query_texts, top_k_per_query
+                )
+                
+                # Step 5: Re-ranking
+                reranked_memories = await self._rerank_memories(query, retrieved_memories)
+                
+                # Step 6: Apply final top-k limit
+                final_top_k = self._config.retrieval_final_top_k
+                final_memories = reranked_memories[:final_top_k]
+                
+                all_results.append(final_memories)
+                
+                # Step 7: Transparency logging
+                if self._retrieval_log is not None:
+                    from memblocks.models.transparency import RetrievalEntry
+                    
+                    self._retrieval_log.record(
+                        RetrievalEntry(
+                            query_text=query,
+                            source="semantic",
+                            num_results=len(final_memories),
+                            memory_ids=[m.memory_id for m in final_memories if m.memory_id],
+                            memory_summaries=[m.content[:80] for m in final_memories],
+                            expanded_queries=expanded_queries,
+                            hypothetical_paragraphs=hypothetical_paragraphs,
+                            reranked=self._config.retrieval_enable_reranking,
+                            retrieval_method="vector_enhanced",
+                        )
+                    )
+                
+                # Step 8: Event bus notification
+                if self._bus is not None:
+                    self._bus.publish(
+                        "on_memory_retrieved",
+                        {
+                            "source": "semantic",
+                            "collection": self._collection,
+                            "query": query,
+                            "num_results": len(final_memories),
+                            "num_expanded_queries": len(expanded_queries),
+                            "num_hypothetical_paragraphs": len(hypothetical_paragraphs),
+                            "reranked": self._config.retrieval_enable_reranking,
+                        },
+                    )
+                
+                logger.info(
+                    "Retrieved %d memories for query (expanded: %d, hypothetical: %d, reranked: %s)",
+                    len(final_memories),
+                    len(expanded_queries),
+                    len(hypothetical_paragraphs),
+                    self._config.retrieval_enable_reranking,
+                )
+                
+            except Exception as e:
+                logger.error("Retrieval failed for query '%s': %s", query[:50], e)
+                all_results.append([])  # Return empty list for failed query
+        
+        return all_results

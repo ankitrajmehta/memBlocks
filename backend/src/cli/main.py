@@ -1,4 +1,4 @@
-"""Interactive CLI for memBlocks — replaces the old root main.py."""
+"""Interactive CLI for memBlocks with Enhanced Retrieval Visibility."""
 
 import asyncio
 import json
@@ -42,23 +42,8 @@ def setup_logging() -> None:
 
 
 async def save_transparency_data(client: MemBlocksClient) -> None:
-    """Overwrite transparency files with the latest data (fixed filenames for real-time updates)."""
+    """Save transparency data to JSON files."""
     logger = logging.getLogger(__name__)
-
-    # operation_log = client.get_operation_log()
-    # if operation_log:
-    #     ops = operation_log.get_entries(limit=1000)
-    #     ops_data = [op.model_dump(mode="json") for op in ops]
-    #     ops_file = LOG_DIR / "operation_log.json"
-    #     with open(ops_file, "w") as f:
-    #         json.dump(ops_data, f, indent=2)
-    #     # logger.debug(f"Updated {ops_file}")
-
-    #     summary = operation_log.summary()
-    #     summary_file = LOG_DIR / "operation_summary.json"
-    #     with open(summary_file, "w") as f:
-    #         json.dump(summary, f, indent=2, default=str)
-    #     # logger.debug(f"Updated {summary_file}")
 
     retrieval_log = client.get_retrieval_log()
     if retrieval_log:
@@ -66,8 +51,7 @@ async def save_transparency_data(client: MemBlocksClient) -> None:
         retrieval_data = [r.model_dump(mode="json") for r in retrievals]
         retrieval_file = LOG_DIR / "retrieval_log.json"
         with open(retrieval_file, "w") as f:
-            json.dump(retrieval_data, f, indent=2)
-        # logger.debug(f"Updated {retrieval_file}")
+            json.dump(retrieval_data, f, indent=2, default=str)
 
     processing_history = client.get_processing_history()
     if processing_history:
@@ -75,8 +59,56 @@ async def save_transparency_data(client: MemBlocksClient) -> None:
         runs_data = [run.model_dump(mode="json") for run in runs]
         history_file = LOG_DIR / "processing_history.json"
         with open(history_file, "w") as f:
-            json.dump(runs_data, f, indent=2)
-        # logger.debug(f"Updated {history_file}")
+            json.dump(runs_data, f, indent=2, default=str)
+
+
+def display_retrieval_summary(client: MemBlocksClient) -> None:
+    """Display a summary of the last retrieval with enhanced info."""
+    retrieval_log = client.get_retrieval_log()
+    if not retrieval_log:
+        return
+    
+    last = retrieval_log.get_last_retrieval()
+    if not last:
+        return
+    
+    print("\n" + "─" * 70)
+    print("🔍 RETRIEVAL SUMMARY")
+    print("─" * 70)
+    
+    # Query expansion
+    expanded = getattr(last, 'expanded_queries', [])
+    if expanded:
+        print(f"\n📢 Query Expansion ({len(expanded)} queries):")
+        for i, q in enumerate(expanded[:4], 1):  # Show first 4
+            print(f"  {i}. {q[:80]}{'...' if len(q) > 80 else ''}")
+    
+    # Hypothetical paragraphs
+    hypo = getattr(last, 'hypothetical_paragraphs', [])
+    if hypo:
+        print(f"\n💭 Hypothetical Paragraphs ({len(hypo)} generated):")
+        for i, p in enumerate(hypo[:2], 1):  # Show first 2
+            print(f"  {i}. {p[:100]}{'...' if len(p) > 100 else ''}")
+    
+    # Results
+    num_results = getattr(last, 'num_results', 0)
+    reranked = getattr(last, 'reranked', False)
+    method = getattr(last, 'retrieval_method', 'N/A')
+    
+    print(f"\n📊 Results: {num_results} memories")
+    print(f"♻️  Re-ranked: {'✅ Yes' if reranked else '❌ No'}")
+    print(f"🎯 Method: {method}")
+    
+    # Show a few memories
+    summaries = getattr(last, 'memory_summaries', [])
+    if summaries:
+        print(f"\n🧠 Top Memories Retrieved:")
+        for i, summary in enumerate(summaries[:3], 1):
+            print(f"  {i}. {summary[:90]}{'...' if len(summary) > 90 else ''}")
+    
+    print("─" * 70)
+    print(f"💾 Full logs saved to: {LOG_DIR}/retrieval_log.json")
+    print("─" * 70 + "\n")
 
 
 async def ainput(prompt: str = "") -> str:
@@ -88,21 +120,49 @@ async def _run_cli() -> None:
     """Main async CLI loop."""
     setup_logging()
     logger = logging.getLogger(__name__)
-    logger.info("Starting memBlocks CLI")
+    logger.info("Starting memBlocks CLI with Enhanced Retrieval")
 
-    config = MemBlocksConfig()  # reads from environment variables or a .env file
+    # Load config - try current dir first, then parent
+    try:
+        config = MemBlocksConfig()
+    except Exception as e:
+        print(f"❌ Error loading config: {e}")
+        print("\n💡 Make sure your .env file is in the project root (d:/MemBlocks)")
+        print("   Or run from the project root directory")
+        return
+    
+    # Display retrieval configuration
+    print("\n" + "=" * 70)
+    print("  memBlocks CLI - Enhanced Semantic Retrieval")
+    print("=" * 70)
+    print("\n🔧 Retrieval Configuration:")
+    print(f"  📢 Query Expansion: {'✅ Enabled' if config.retrieval_enable_query_expansion else '❌ Disabled'}")
+    print(f"     - Expansions per query: {config.retrieval_num_query_expansions}")
+    print(f"  💭 Hypothetical Paragraphs: {'✅ Enabled' if config.retrieval_enable_hypothetical_paragraphs else '❌ Disabled'}")
+    print(f"     - Paragraphs per query: {config.retrieval_num_hypothetical_paragraphs}")
+    print(f"  ♻️  Re-ranking: {'✅ Enabled' if config.retrieval_enable_reranking else '❌ Disabled'}")
+    print(f"  📊 Final top-k: {config.retrieval_final_top_k}")
+    print("=" * 70)
+    
     client = MemBlocksClient(config)
 
+    # Track if we've already displayed the retrieval summary for this query
+    _last_retrieval_timestamp = None
+
     def on_event(event_name: str, payload: dict) -> None:
+        nonlocal _last_retrieval_timestamp
         logger.info(f"Event: {event_name} - {json.dumps(payload, default=str)}")
-        # Refresh transparency files after each pipeline completes or fails
-        if event_name in (
-            "on_pipeline_completed",
-            "on_pipeline_failed",
-            "on_memory_stored",
-            "on_memory_retrieved",
-        ):
+        # Save and display retrieval info
+        if event_name == "on_memory_retrieved":
             asyncio.create_task(save_transparency_data(client))
+            # Display summary only once per retrieval by checking timestamp
+            retrieval_log = client.get_retrieval_log()
+            if retrieval_log:
+                last = retrieval_log.get_last_retrieval()
+                if last and getattr(last, 'timestamp', None) != _last_retrieval_timestamp:
+                    _last_retrieval_timestamp = getattr(last, 'timestamp', None)
+                    # Display immediately since save is async
+                    display_retrieval_summary(client)
 
     events = [
         "on_memory_extracted",
@@ -120,10 +180,6 @@ async def _run_cli() -> None:
     for event in events:
         client.subscribe(event, lambda p, e=event: on_event(e, p))
 
-    print("=" * 60)
-    print("  memBlocks CLI")
-    print("=" * 60)
-
     # ---- user setup ----
     user_id = (
         await ainput("\nEnter user ID (or press Enter for 'default_user'): ")
@@ -132,14 +188,14 @@ async def _run_cli() -> None:
         user_id = "default_user"
 
     user = await client.get_or_create_user(user_id)
-    print(f"User: {user.get('user_id')}")
+    print(f"✅ User: {user.get('user_id')}")
 
     # ---- block selection ----
     blocks = await client.get_user_blocks(user_id)
 
     block = None
     if blocks:
-        print(f"\nFound {len(blocks)} existing block(s):")
+        print(f"\n📦 Found {len(blocks)} existing block(s):")
         for i, b in enumerate(blocks, 1):
             print(f"  {i}. {b.name} ({b.id})")
 
@@ -159,21 +215,25 @@ async def _run_cli() -> None:
         print("Creating block...")
         block = await client.create_block(user_id=user_id, name=name, description=desc)
 
-    print(f"\nUsing block: {block.name} ({block.id})")
+    print(f"\n✅ Using block: {block.name} ({block.id})")
 
     # ---- session setup ----
     session = await client.create_session(user_id=user_id, block_id=block.id)
-    print(f"Session: {session.id}")
+    print(f"✅ Session: {session.id}")
 
     # ---- chat loop ----
-    # helper: persist turns in background to avoid blocking the chat loop
     async def _persist_turn(session, user_msg, ai_response) -> None:
         try:
             await session.add(user_msg=user_msg, ai_response=ai_response)
         except Exception as e:
-            print(f"Warning: failed to persist turn: {e}")
+            print(f"⚠️  Warning: failed to persist turn: {e}")
 
-    print("\nType your message (Ctrl+C or 'quit' to exit):\n")
+    print("\n" + "=" * 70)
+    print("💬 Chat with your assistant")
+    print("   Type 'quit' to exit")
+    print("   Type 'logs' to view latest retrieval details")
+    print("=" * 70 + "\n")
+    
     try:
         while True:
             try:
@@ -185,8 +245,15 @@ async def _run_cli() -> None:
                 continue
             if user_input.lower() in ("quit", "exit", "q"):
                 break
+            
+            # Special command to show retrieval logs
+            if user_input.lower() == "logs":
+                display_retrieval_summary(client)
+                continue
 
             try:
+                print("🔄 Retrieving memories...")
+                
                 # Retrieve memory context
                 context = await block.retrieve(user_input)
                 memory_window = await session.get_memory_window()
@@ -213,23 +280,28 @@ async def _run_cli() -> None:
                 )
                 ai_response = await client.llm.chat(messages=messages_for_llm)
 
-                print(f"\nAssistant: {ai_response}\n")
+                print(f"\n🤖 Assistant: {ai_response}\n")
 
-                # Persist turn in background (don't await so loop stays responsive)
+                # Persist turn in background
                 asyncio.create_task(_persist_turn(session, user_input, ai_response))
 
             except Exception as e:
-                print(f"Error: {e}\n")
+                print(f"❌ Error: {e}\n")
+                logger.exception("Chat loop error")
 
     except KeyboardInterrupt:
         pass
 
     finally:
-        print("\nFlushing final transparency data...")
+        print("\n💾 Flushing final transparency data...")
         await save_transparency_data(client)
-        print("\nClosing connections...")
+        print("🔌 Closing connections...")
         await client.close()
-        print("Goodbye!")
+        print("\n👋 Goodbye!\n")
+        print(f"📊 View detailed logs at: {LOG_DIR.absolute()}")
+        print(f"   - retrieval_log.json - All retrieval details")
+        print(f"   - memblocks.log - Debug logs")
+        print(f"\n💡 Run 'python verify_retrieval.py' to analyze retrievals\n")
 
 
 def main() -> None:

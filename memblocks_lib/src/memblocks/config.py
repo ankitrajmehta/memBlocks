@@ -118,6 +118,45 @@ class MemBlocksConfig(BaseSettings):
     )
 
     # -------------------------------------------------------------------------
+    # Retrieval Configuration
+    # -------------------------------------------------------------------------
+    retrieval_num_query_expansions: int = Field(
+        3,
+        validation_alias="RETRIEVAL_NUM_QUERY_EXPANSIONS",
+        description="Number of expanded queries to generate for each original query.",
+    )
+    retrieval_num_hypothetical_paragraphs: int = Field(
+        2,
+        validation_alias="RETRIEVAL_NUM_HYPOTHETICAL_PARAGRAPHS",
+        description="Number of hypothetical answer paragraphs to generate for each query.",
+    )
+    retrieval_top_k_per_query: int = Field(
+        5,
+        validation_alias="RETRIEVAL_TOP_K_PER_QUERY",
+        description="Number of top results to retrieve per expanded query.",
+    )
+    retrieval_final_top_k: int = Field(
+        10,
+        validation_alias="RETRIEVAL_FINAL_TOP_K",
+        description="Final number of results to return after re-ranking.",
+    )
+    retrieval_enable_query_expansion: bool = Field(
+        True,
+        validation_alias="RETRIEVAL_ENABLE_QUERY_EXPANSION",
+        description="Enable query expansion with related terms.",
+    )
+    retrieval_enable_hypothetical_paragraphs: bool = Field(
+        True,
+        validation_alias="RETRIEVAL_ENABLE_HYPOTHETICAL_PARAGRAPHS",
+        description="Enable hypothetical paragraph generation for retrieval.",
+    )
+    retrieval_enable_reranking: bool = Field(
+        True,
+        validation_alias="RETRIEVAL_ENABLE_RERANKING",
+        description="Enable LLM-based re-ranking of retrieved results.",
+    )
+
+    # -------------------------------------------------------------------------
     # Arize (optional monitoring)
     # -------------------------------------------------------------------------
     arize_space_id: Optional[str] = Field(None, validation_alias="ARIZE_SPACE_ID")

@@ -50,6 +50,11 @@ class RetrievalEntry(BaseModel):
     top_scores: List[float] = Field(default_factory=list)
     memory_ids: List[str] = Field(default_factory=list)
     memory_summaries: List[str] = Field(default_factory=list)
+    # Enhanced retrieval metadata
+    expanded_queries: List[str] = Field(default_factory=list, description="Query expansion results")
+    hypothetical_paragraphs: List[str] = Field(default_factory=list, description="Hypothetical answer paragraphs")
+    reranked: bool = Field(default=False, description="Whether results were re-ranked")
+    retrieval_method: str = Field(default="vector", description="Retrieval method used: vector, hybrid, etc.")
 
 
 class PipelineRunEntry(BaseModel):
