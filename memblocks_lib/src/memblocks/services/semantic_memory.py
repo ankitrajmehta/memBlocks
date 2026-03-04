@@ -1,6 +1,8 @@
 """SemanticMemoryService — extracted from models/sections.py SemanticMemorySection."""
 
 import json
+import re
+import string
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple, TYPE_CHECKING
@@ -44,8 +46,9 @@ class SemanticMemoryService:
     Handles all semantic memory operations:
     - PS1 extraction from conversation
     - PS2 conflict resolution
-    - Vector storage via QdrantAdapter
-    - Enhanced vector retrieval with query expansion, hypothetical paragraphs, and re-ranking
+    - Vector storage via QdrantAdapter (with SPLADE sparse vectors when enabled)
+    - Enhanced vector retrieval with SPLADE hybrid search, query expansion,
+      hypothetical paragraphs, and LLM-based re-ranking
 
     Replaces:
     - SemanticMemorySection.extract_semantic_memories() (sections.py:53-125)
@@ -55,7 +58,7 @@ class SemanticMemoryService:
 
     Bug Fix 3: store() return type is now correctly List[MemoryOperation]
     (old store_memory() was annotated -> bool but returned List[MemoryOperation]).
-    
+
     Enhancement: retrieve() now supports query expansion, hypothetical paragraph generation,
     and LLM-based re-ranking for improved semantic retrieval coverage and relevance.
     """
@@ -190,6 +193,11 @@ class SemanticMemoryService:
 
         text_to_embed = memory_unit.embedding_text or memory_unit.content
         new_vector = self._embeddings.embed_text(text_to_embed)
+        new_sparse_vector = (
+            self._embeddings.embed_sparse_text(text_to_embed)
+            if self._config.retrieval_enable_sparse
+            else None
+        )
 
         similar_results = self._qdrant.retrieve_from_vector(
             self._collection, new_vector, top_k=5
@@ -227,7 +235,9 @@ class SemanticMemoryService:
         # ---- No similar memories → just ADD ----
         if not existing_memories_list:
             payload = memory_unit.model_dump(exclude={"memory_id"})
-            success = self._qdrant.store_vector(self._collection, new_vector, payload)
+            success = self._qdrant.store_vector(
+                self._collection, new_vector, payload, sparse_vector=new_sparse_vector
+            )
             if success:
                 logger.debug(
                     "Added new memory (no similar): %s...", memory_unit.content[:60]
@@ -254,7 +264,9 @@ class SemanticMemoryService:
             logger.warning("PS2 conflict resolution failed: %s", e)
             logger.debug("Fallback: Adding memory without conflict check")
             payload = memory_unit.model_dump(exclude={"memory_id"})
-            success = self._qdrant.store_vector(self._collection, new_vector, payload)
+            success = self._qdrant.store_vector(
+                self._collection, new_vector, payload, sparse_vector=new_sparse_vector
+            )
             if success:
                 operations.append(
                     MemoryOperation(operation="ADD", content=memory_unit.content)
@@ -266,7 +278,9 @@ class SemanticMemoryService:
         # Handle new memory decision
         if result.new_memory_operation.operation == "ADD":
             payload = memory_unit.model_dump(exclude={"memory_id"})
-            success = self._qdrant.store_vector(self._collection, new_vector, payload)
+            success = self._qdrant.store_vector(
+                self._collection, new_vector, payload, sparse_vector=new_sparse_vector
+            )
             if success:
                 operations_performed.append("ADD new memory")
                 logger.debug("Added new memory: %s...", memory_unit.content[:60])
@@ -335,6 +349,11 @@ class SemanticMemoryService:
 
                 updated_text = updated_unit.embedding_text or updated_unit.content
                 updated_vector = self._embeddings.embed_text(updated_text)
+                updated_sparse_vector = (
+                    self._embeddings.embed_sparse_text(updated_text)
+                    if self._config.retrieval_enable_sparse
+                    else None
+                )
 
                 # Payload excludes memory_id (stored as the Qdrant point ID, not in payload)
                 payload = updated_unit.model_dump(exclude={"memory_id"})
@@ -344,6 +363,7 @@ class SemanticMemoryService:
                     updated_vector,
                     payload,
                     point_id=real_id,
+                    sparse_vector=updated_sparse_vector,
                 )
                 if success:
                     operations_performed.append(f"UPDATE {real_id[:8]}...")
@@ -417,16 +437,106 @@ class SemanticMemoryService:
     # Enhanced Retrieval with Query Expansion, Hypothetical Paragraphs, and Re-ranking
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _extract_query_terms(query: str) -> Tuple[List[str], List[str]]:
+        """
+        Lightweight extraction of keywords and entity candidates from a raw
+        query string using only Python stdlib (re, string).
+
+        Strategy:
+        - keywords: lowercased, punctuation-stripped tokens with stopwords removed.
+        - entities: sequences of consecutive Title-Case words (named entity candidates).
+
+        No external NLP libraries required.
+
+        Args:
+            query: Raw query text from the user.
+
+        Returns:
+            (keywords, entities) — both are lists of lowercase strings.
+        """
+        _STOPWORDS = {
+            "a",
+            "an",
+            "and",
+            "are",
+            "as",
+            "at",
+            "be",
+            "been",
+            "but",
+            "by",
+            "did",
+            "do",
+            "does",
+            "for",
+            "from",
+            "had",
+            "has",
+            "have",
+            "he",
+            "her",
+            "him",
+            "his",
+            "how",
+            "i",
+            "if",
+            "in",
+            "is",
+            "it",
+            "its",
+            "just",
+            "me",
+            "my",
+            "no",
+            "not",
+            "of",
+            "on",
+            "or",
+            "our",
+            "she",
+            "so",
+            "that",
+            "the",
+            "their",
+            "them",
+            "then",
+            "there",
+            "they",
+            "this",
+            "to",
+            "too",
+            "up",
+            "us",
+            "was",
+            "we",
+            "what",
+            "when",
+            "where",
+            "which",
+            "who",
+            "will",
+            "with",
+            "you",
+            "your",
+        }
+        clean = query.translate(str.maketrans("", "", string.punctuation))
+        tokens = clean.lower().split()
+        keywords = [t for t in tokens if t and t not in _STOPWORDS and len(t) > 2]
+        entity_pattern = re.compile(r"\b[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\b")
+        entities = [e.lower() for e in entity_pattern.findall(query) if len(e) > 2]
+        return keywords, entities
+
     async def _enhance_query(self, query: str) -> Tuple[List[str], List[str]]:
         """
         Generate both expanded queries and hypothetical paragraphs in a SINGLE API call.
-        
+
         This combines query expansion and hypothetical paragraph generation to reduce latency
         by halving the number of LLM API calls during retrieval.
-        
+
         Args:
             query: Original query text.
-            
+
         Returns:
             Tuple of (expanded_queries, hypothetical_paragraphs).
             expanded_queries includes the original query.
@@ -434,38 +544,41 @@ class SemanticMemoryService:
         # Check if both features are disabled
         expansion_enabled = self._config.retrieval_enable_query_expansion
         hypothetical_enabled = self._config.retrieval_enable_hypothetical_paragraphs
-        
+
         if not expansion_enabled and not hypothetical_enabled:
             logger.debug("Query enhancement disabled, returning original query only")
             return [query], []
-        
+
         try:
             num_expansions = self._config.retrieval_num_query_expansions
             num_paragraphs = self._config.retrieval_num_hypothetical_paragraphs
-            
+
             # Use combined prompt for both operations
             prompt = QUERY_ENHANCEMENT_PROMPT.format(
-                num_expansions=num_expansions,
-                num_paragraphs=num_paragraphs
+                num_expansions=num_expansions, num_paragraphs=num_paragraphs
             )
-            
+
             chain = self._llm.create_structured_chain(
                 system_prompt=prompt,
                 pydantic_model=QueryEnhancementOutput,
                 temperature=0.4,  # Balanced temperature for both tasks
             )
-            
+
             user_input = (
                 f"Original Query: {query}\n\n"
                 f"Generate {num_expansions} expanded queries AND "
                 f"{num_paragraphs} hypothetical answer paragraphs."
             )
             result = await chain.ainvoke({"input": user_input})
-            
+
             # Include original query + expanded queries
-            expanded_queries = [query] + result.expanded_queries if expansion_enabled else [query]
-            hypothetical_paragraphs = result.hypothetical_paragraphs if hypothetical_enabled else []
-            
+            expanded_queries = (
+                [query] + result.expanded_queries if expansion_enabled else [query]
+            )
+            hypothetical_paragraphs = (
+                result.hypothetical_paragraphs if hypothetical_enabled else []
+            )
+
             logger.debug(
                 "Query enhancement: %d expanded queries + %d hypothetical paragraphs from: %s",
                 len(expanded_queries),
@@ -473,21 +586,23 @@ class SemanticMemoryService:
                 query[:50],
             )
             return expanded_queries, hypothetical_paragraphs
-            
+
         except Exception as e:
-            logger.warning("Query enhancement failed: %s. Using original query only.", e)
+            logger.warning(
+                "Query enhancement failed: %s. Using original query only.", e
+            )
             return [query], []
 
     async def _expand_query(self, query: str) -> List[str]:
         """
         [DEPRECATED] Use _enhance_query() instead for better performance.
-        
+
         Generate expanded queries with additional related terms for better retrieval coverage.
         This method is kept for backward compatibility but calls the optimized _enhance_query().
-        
+
         Args:
             query: Original query text.
-            
+
         Returns:
             List of expanded queries including the original.
         """
@@ -497,85 +612,129 @@ class SemanticMemoryService:
     async def _generate_hypothetical_paragraphs(self, query: str) -> List[str]:
         """
         [DEPRECATED] Use _enhance_query() instead for better performance.
-        
+
         Generate hypothetical answer paragraphs for the query (HyDE technique).
         This method is kept for backward compatibility but calls the optimized _enhance_query().
-        
+
         Args:
             query: Original query text.
-            
+
         Returns:
             List of hypothetical answer paragraphs.
         """
         _, hypothetical_paragraphs = await self._enhance_query(query)
         return hypothetical_paragraphs
 
-    def _retrieve_with_vectors(
-        self, 
-        query_texts: List[str], 
-        top_k: int
+    def _retrieve_with_hybrid(
+        self,
+        query_texts: List[str],
+        top_k: int,
     ) -> Tuple[List[SemanticMemoryUnit], Set[str]]:
         """
-        Retrieve memories using vector search for multiple query texts.
-        
+        Retrieve memories for multiple query texts using hybrid (dense + SPLADE)
+        or pure-dense search depending on config.retrieval_enable_sparse.
+
+        Runs all queries in parallel via ThreadPoolExecutor, then deduplicates
+        results by memory_id across all query groups.
+
         Args:
             query_texts: List of query strings (original + expanded + hypothetical).
-            top_k: Number of results per query.
-            
+            top_k: Number of results to retrieve per query.
+
         Returns:
-            Tuple of (deduplicated memories, set of seen memory IDs).
+            Tuple of (deduplicated_memories, set_of_seen_memory_ids).
         """
-        logger.debug("Retrieving with %d query variations, top_k=%d", len(query_texts), top_k)
-        
+        logger.debug(
+            "Retrieving with %d query variations, top_k=%d, sparse=%s",
+            len(query_texts),
+            top_k,
+            self._config.retrieval_enable_sparse,
+        )
+
         query_vectors = self._embeddings.embed_documents(query_texts)
 
-        def _search(vector: List[float]) -> List[SemanticMemoryUnit]:
-            results = self._qdrant.retrieve_from_vector(self._collection, vector, top_k)
-            return [
-                SemanticMemoryUnit(**hit.payload, memory_id=str(hit.id))
-                for hit in results
-            ]
+        if self._config.retrieval_enable_sparse:
+            query_sparse_vectors = self._embeddings.embed_sparse_documents(query_texts)
 
-        with ThreadPoolExecutor(max_workers=min(10, len(query_vectors))) as executor:
-            grouped_results = list(executor.map(_search, query_vectors))
+            def _hybrid_search(
+                args: Tuple[List[float], Dict[str, Any]],
+            ) -> List[SemanticMemoryUnit]:
+                dense_vec, sparse_vec = args
+                results = self._qdrant.retrieve_hybrid(
+                    self._collection, dense_vec, sparse_vec, top_k
+                )
+                memories = []
+                for hit in results:
+                    try:
+                        memories.append(
+                            SemanticMemoryUnit(**hit.payload, memory_id=str(hit.id))
+                        )
+                    except Exception:
+                        pass
+                return memories
 
-        # De-duplicate by memory_id (not content, to preserve uniqueness properly)
+            with ThreadPoolExecutor(
+                max_workers=min(10, len(query_vectors))
+            ) as executor:
+                grouped_results = list(
+                    executor.map(
+                        _hybrid_search, zip(query_vectors, query_sparse_vectors)
+                    )
+                )
+        else:
+
+            def _dense_search(dense_vec: List[float]) -> List[SemanticMemoryUnit]:
+                results = self._qdrant.retrieve_from_vector(
+                    self._collection, dense_vec, top_k
+                )
+                memories = []
+                for hit in results:
+                    try:
+                        memories.append(
+                            SemanticMemoryUnit(**hit.payload, memory_id=str(hit.id))
+                        )
+                    except Exception:
+                        pass
+                return memories
+
+            with ThreadPoolExecutor(
+                max_workers=min(10, len(query_vectors))
+            ) as executor:
+                grouped_results = list(executor.map(_dense_search, query_vectors))
+
+        # De-duplicate by memory_id across all query groups
         seen_ids: Set[str] = set()
-        deduplicated_memories: List[SemanticMemoryUnit] = []
-
+        deduplicated: List[SemanticMemoryUnit] = []
         for group in grouped_results:
             for memory in group:
                 if memory.memory_id and memory.memory_id not in seen_ids:
                     seen_ids.add(memory.memory_id)
-                    deduplicated_memories.append(memory)
+                    deduplicated.append(memory)
 
         logger.debug(
-            "Retrieved %d unique memories from %d query vectors",
-            len(deduplicated_memories),
+            "Hybrid retrieval: %d unique memories from %d query vectors",
+            len(deduplicated),
             len(query_vectors),
         )
-        
-        return deduplicated_memories, seen_ids
+        return deduplicated, seen_ids
 
     async def _rerank_memories(
-        self, 
-        query: str, 
-        memories: List[SemanticMemoryUnit]
+        self, query: str, memories: List[SemanticMemoryUnit]
     ) -> List[SemanticMemoryUnit]:
         """
         Re-rank retrieved memories using LLM-based relevance assessment.
-        
+
         Args:
             query: Original query text.
             memories: List of memories to re-rank.
-            
+
         Returns:
             Re-ranked list of memories, ordered by relevance.
         """
         if not self._config.retrieval_enable_reranking or not memories:
             logger.debug("Re-ranking disabled or no memories to rank")
             return memories
-        
+
         try:
             # Prepare memories for re-ranking
             memories_data = [
@@ -588,24 +747,24 @@ class SemanticMemoryService:
                 }
                 for m in memories
             ]
-            
+
             chain = self._llm.create_structured_chain(
                 system_prompt=RERANKING_PROMPT,
                 pydantic_model=ReRankingOutput,
                 temperature=0.0,  # Deterministic for ranking
             )
-            
+
             user_input = (
                 f"Original Query: {query}\n\n"
                 f"Retrieved Memories:\n{json.dumps(memories_data, indent=2)}\n\n"
                 f"Re-rank these memories by relevance to the query."
             )
-            
+
             result = await chain.ainvoke({"input": user_input})
-            
+
             # Create a mapping from memory_id to original memory
             memory_map = {m.memory_id: m for m in memories if m.memory_id}
-            
+
             # Reconstruct ordered list based on re-ranking
             reranked: List[SemanticMemoryUnit] = []
             for ranked in result.ranked_memories:
@@ -619,15 +778,15 @@ class SemanticMemoryService:
                         ranked.relevance_reason[:60],
                     )
                     reranked.append(memory)
-            
+
             logger.debug(
                 "Re-ranked %d memories for query: %s",
                 len(reranked),
                 query[:50],
             )
-            
+
             return reranked
-            
+
         except Exception as e:
             logger.warning("Re-ranking failed: %s. Returning original order.", e)
             return memories
@@ -659,54 +818,64 @@ class SemanticMemoryService:
         """
         # Process each query independently
         all_results: List[List[SemanticMemoryUnit]] = []
-        
+
         for query in query_texts:
             logger.info("Processing retrieval for query: %s", query[:60])
-            
+
             # Track metadata for transparency logging
             expanded_queries: List[str] = []
             hypothetical_paragraphs: List[str] = []
-            
+
             try:
                 # Step 1: Query Enhancement (Combined query expansion + hypothetical paragraphs in single API call)
-                expanded_queries, hypothetical_paragraphs = await self._enhance_query(query)
-                
+                expanded_queries, hypothetical_paragraphs = await self._enhance_query(
+                    query
+                )
+
                 # Step 2: Combine all query variations for retrieval
                 all_query_texts = expanded_queries + hypothetical_paragraphs
-                
+
                 # Step 3: Vector Search
                 top_k_per_query = self._config.retrieval_top_k_per_query
-                retrieved_memories, seen_ids = self._retrieve_with_vectors(
+                retrieved_memories, seen_ids = self._retrieve_with_hybrid(
                     all_query_texts, top_k_per_query
                 )
-                
+
                 # Step 4: Re-ranking
-                reranked_memories = await self._rerank_memories(query, retrieved_memories)
-                
+                reranked_memories = await self._rerank_memories(
+                    query, retrieved_memories
+                )
+
                 # Step 5: Apply final top-k limit
                 final_top_k = self._config.retrieval_final_top_k
                 final_memories = reranked_memories[:final_top_k]
-                
+
                 all_results.append(final_memories)
-                
+
                 # Step 6: Transparency logging
                 if self._retrieval_log is not None:
                     from memblocks.models.transparency import RetrievalEntry
-                    
+
                     self._retrieval_log.record(
                         RetrievalEntry(
                             query_text=query,
                             source="semantic",
                             num_results=len(final_memories),
-                            memory_ids=[m.memory_id for m in final_memories if m.memory_id],
+                            memory_ids=[
+                                m.memory_id for m in final_memories if m.memory_id
+                            ],
                             memory_summaries=[m.content[:80] for m in final_memories],
                             expanded_queries=expanded_queries,
                             hypothetical_paragraphs=hypothetical_paragraphs,
                             reranked=self._config.retrieval_enable_reranking,
-                            retrieval_method="vector_enhanced",
+                            retrieval_method=(
+                                "hybrid_enhanced"
+                                if self._config.retrieval_enable_sparse
+                                else "vector_enhanced"
+                            ),
                         )
                     )
-                
+
                 # Step 7: Event bus notification
                 if self._bus is not None:
                     self._bus.publish(
@@ -721,7 +890,7 @@ class SemanticMemoryService:
                             "reranked": self._config.retrieval_enable_reranking,
                         },
                     )
-                
+
                 logger.info(
                     "Retrieved %d memories for query (expanded: %d, hypothetical: %d, reranked: %s)",
                     len(final_memories),
@@ -729,9 +898,9 @@ class SemanticMemoryService:
                     len(hypothetical_paragraphs),
                     self._config.retrieval_enable_reranking,
                 )
-                
+
             except Exception as e:
                 logger.error("Retrieval failed for query '%s': %s", query[:50], e)
                 all_results.append([])  # Return empty list for failed query
-        
+
         return all_results

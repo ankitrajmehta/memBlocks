@@ -6,9 +6,15 @@ from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
+    FieldCondition,
     Filter,
+    FusionQuery,
+    MatchAny,
     PointIdsList,
     PointStruct,
+    Prefetch,
+    SparseVector,
+    SparseVectorParams,
     VectorParams,
 )
 
@@ -169,6 +175,9 @@ class QdrantAdapter:
                     size=resolved_size,
                     distance=Distance.COSINE,
                 ),
+                sparse_vectors_config={
+                    "text-sparse": SparseVectorParams(),
+                },
             )
             return True
         except Exception as e:
@@ -186,27 +195,44 @@ class QdrantAdapter:
         vector: List[float],
         payload: Dict[str, Any],
         point_id: Optional[str] = None,
+        sparse_vector: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Upsert a single vector into a collection.
 
         Args:
             collection_name: Target Qdrant collection.
-            vector: Embedding vector.
+            vector: Dense embedding vector.
             payload: Metadata stored alongside the vector.
             point_id: Optional explicit UUID string ID.  Auto-generated if None.
+            sparse_vector: Optional dict with 'indices' and 'values' for SPLADE.
+                           When provided, the point is stored with both a dense
+                           (unnamed default) and a sparse ('text-sparse') vector,
+                           enabling hybrid RRF retrieval via retrieve_hybrid().
 
         Returns:
             True if successful, False otherwise.
         """
         try:
             resolved_id = point_id or str(uuid4())
+
+            if sparse_vector:
+                packed_vector = {
+                    "": vector,  # unnamed slot = default dense vector
+                    "text-sparse": SparseVector(
+                        indices=sparse_vector.get("indices", []),
+                        values=sparse_vector.get("values", []),
+                    ),
+                }
+            else:
+                packed_vector = vector
+
             self._client.upsert(
                 collection_name=collection_name,
                 points=[
                     PointStruct(
                         id=resolved_id,
-                        vector=vector,
+                        vector=packed_vector,
                         payload=payload,
                     )
                 ],
@@ -301,20 +327,116 @@ class QdrantAdapter:
             )
             return []
 
-    class QueryObject:
-        query_vector: List[float]
-        keywords: List[str]
-        entities: List[str]
+    def retrieve_hybrid(
+        self,
+        collection_name: str,
+        dense_query_vector: List[float],
+        sparse_query_vector: Dict[str, Any],
+        top_k: int = 5,
+    ) -> list:
+        """
+        Hybrid retrieval combining dense semantic search and SPLADE sparse search
+        via Qdrant's native Reciprocal Rank Fusion (RRF).
 
-    def hybrid_retrieve(self, query_objects: List[QueryObject], top_k: int = 5) -> list:
+        How it works:
+        1. Prefetch top_k*2 results using the dense vector (cosine similarity).
+        2. Prefetch top_k*2 results using the SPLADE sparse vector.
+        3. Fuse both result sets using RRF and return the top_k fused results.
+
+        Args:
+            collection_name: Source Qdrant collection.
+            dense_query_vector: Dense embedding from nomic-embed-text (or similar).
+            sparse_query_vector: Dict with 'indices' and 'values' from SPLADE
+                                 (output of EmbeddingProvider.embed_sparse_text()).
+            top_k: Number of final results to return after fusion.
+
+        Returns:
+            List of ScoredPoint objects, ranked by RRF fusion score.
         """
-        Retrieve vectors by hybrid search.
-        Use query_vector for vector search
-        Use keywords and entities for BM25 search
-        Combine the results using Reciprocal Rank Fusion (RRF)
+        try:
+            sparse_vec = SparseVector(
+                indices=sparse_query_vector.get("indices", []),
+                values=sparse_query_vector.get("values", []),
+            )
+            results = self._client.query_points(
+                collection_name=collection_name,
+                prefetch=[
+                    Prefetch(
+                        query=dense_query_vector,
+                        using="",  # unnamed slot = default dense vector
+                        limit=top_k * 2,
+                    ),
+                    Prefetch(
+                        query=sparse_vec,
+                        using="text-sparse",  # named sparse vector slot
+                        limit=top_k * 2,
+                    ),
+                ],
+                query=FusionQuery(fusion="rrf"),
+                limit=top_k,
+            )
+            return results.points
+        except Exception as e:
+            logger.error("Error in hybrid retrieval from '%s': %s", collection_name, e)
+            return []
+
+    def retrieve_by_keywords_and_entities(
+        self,
+        collection_name: str,
+        keywords: List[str],
+        entities: List[str],
+        top_k: int = 10,
+    ) -> list:
         """
-        # TODO: implement
-        pass
+        Scroll the collection for points whose payload 'keywords' or 'entities'
+        arrays contain any of the supplied terms (OR / 'should' logic).
+
+        Used as a supplementary/benchmarking path alongside vector retrieval.
+        No vector computation required — pure payload filtering.
+
+        Args:
+            collection_name: Source Qdrant collection.
+            keywords: Lowercased keyword strings extracted from the query.
+            entities: Lowercased entity strings extracted from the query.
+            top_k: Maximum number of matching points to return.
+
+        Returns:
+            List of Record objects (qdrant_client types).
+        """
+        if not keywords and not entities:
+            return []
+
+        try:
+            should_conditions = []
+            if keywords:
+                should_conditions.append(
+                    FieldCondition(
+                        key="keywords",
+                        match=MatchAny(any=[k.lower() for k in keywords if k.strip()]),
+                    )
+                )
+            if entities:
+                should_conditions.append(
+                    FieldCondition(
+                        key="entities",
+                        match=MatchAny(any=[e.lower() for e in entities if e.strip()]),
+                    )
+                )
+
+            payload_filter = Filter(should=should_conditions)
+            points, _ = self._client.scroll(
+                collection_name=collection_name,
+                scroll_filter=payload_filter,
+                limit=top_k,
+                with_vectors=False,
+                with_payload=True,
+            )
+            return points
+        except Exception as e:
+            logger.error(
+                "Error in keyword/entity scroll on '%s': %s", collection_name, e
+            )
+            return []
 
     # ------------------------------------------------------------------
     # Vector deletion

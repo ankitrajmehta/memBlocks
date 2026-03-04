@@ -102,6 +102,11 @@ class MemBlocksConfig(BaseSettings):
     embeddings_model: str = Field(
         "nomic-embed-text", validation_alias="EMBEDDINGS_MODEL"
     )
+    sparse_embeddings_model: str = Field(
+        "prithivida/Splade_PP_en_v1",
+        validation_alias="SPARSE_EMBEDDINGS_MODEL",
+        description="SPLADE model used by fastembed for sparse vector generation.",
+    )
 
     # -------------------------------------------------------------------------
     # Memory pipeline behaviour
@@ -154,6 +159,14 @@ class MemBlocksConfig(BaseSettings):
         True,
         validation_alias="RETRIEVAL_ENABLE_RERANKING",
         description="Enable LLM-based re-ranking of retrieved results.",
+    )
+    retrieval_enable_sparse: bool = Field(
+        True,
+        validation_alias="RETRIEVAL_ENABLE_SPARSE",
+        description=(
+            "Enable SPLADE sparse vector hybrid search (dense + sparse via Qdrant RRF). "
+            "When False, falls back to pure dense vector search."
+        ),
     )
 
     # -------------------------------------------------------------------------

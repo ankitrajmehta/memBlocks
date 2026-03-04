@@ -16,7 +16,7 @@ dependencies = [
     "openinference-instrumentation-langchain>=0.1.4",
     "arize-otel>=0.7.0",
     "langchain-google-genai>=4.2.1",
-
+    "fastembed>=0.7.4",
 ]
 
 [build-system]
