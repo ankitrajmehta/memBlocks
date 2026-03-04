@@ -11,6 +11,7 @@ from memblocks.models.llm_outputs import (
     ExistingSemanticMemoryUnitForPS2,
     QueryExpansionOutput,
     HypotheticalParagraphsOutput,
+    QueryEnhancementOutput,
     ReRankingOutput,
 )
 from memblocks.models.units import (
@@ -23,6 +24,7 @@ from memblocks.prompts import (
     PS2_MEMORY_UPDATE_PROMPT,
     QUERY_EXPANSION_PROMPT,
     HYPOTHETICAL_PARAGRAPH_PROMPT,
+    QUERY_ENHANCEMENT_PROMPT,
     RERANKING_PROMPT,
 )
 from memblocks.logger import get_logger
@@ -415,9 +417,73 @@ class SemanticMemoryService:
     # Enhanced Retrieval with Query Expansion, Hypothetical Paragraphs, and Re-ranking
     # ------------------------------------------------------------------ #
 
+    async def _enhance_query(self, query: str) -> Tuple[List[str], List[str]]:
+        """
+        Generate both expanded queries and hypothetical paragraphs in a SINGLE API call.
+        
+        This combines query expansion and hypothetical paragraph generation to reduce latency
+        by halving the number of LLM API calls during retrieval.
+        
+        Args:
+            query: Original query text.
+            
+        Returns:
+            Tuple of (expanded_queries, hypothetical_paragraphs).
+            expanded_queries includes the original query.
+        """
+        # Check if both features are disabled
+        expansion_enabled = self._config.retrieval_enable_query_expansion
+        hypothetical_enabled = self._config.retrieval_enable_hypothetical_paragraphs
+        
+        if not expansion_enabled and not hypothetical_enabled:
+            logger.debug("Query enhancement disabled, returning original query only")
+            return [query], []
+        
+        try:
+            num_expansions = self._config.retrieval_num_query_expansions
+            num_paragraphs = self._config.retrieval_num_hypothetical_paragraphs
+            
+            # Use combined prompt for both operations
+            prompt = QUERY_ENHANCEMENT_PROMPT.format(
+                num_expansions=num_expansions,
+                num_paragraphs=num_paragraphs
+            )
+            
+            chain = self._llm.create_structured_chain(
+                system_prompt=prompt,
+                pydantic_model=QueryEnhancementOutput,
+                temperature=0.4,  # Balanced temperature for both tasks
+            )
+            
+            user_input = (
+                f"Original Query: {query}\n\n"
+                f"Generate {num_expansions} expanded queries AND "
+                f"{num_paragraphs} hypothetical answer paragraphs."
+            )
+            result = await chain.ainvoke({"input": user_input})
+            
+            # Include original query + expanded queries
+            expanded_queries = [query] + result.expanded_queries if expansion_enabled else [query]
+            hypothetical_paragraphs = result.hypothetical_paragraphs if hypothetical_enabled else []
+            
+            logger.debug(
+                "Query enhancement: %d expanded queries + %d hypothetical paragraphs from: %s",
+                len(expanded_queries),
+                len(hypothetical_paragraphs),
+                query[:50],
+            )
+            return expanded_queries, hypothetical_paragraphs
+            
+        except Exception as e:
+            logger.warning("Query enhancement failed: %s. Using original query only.", e)
+            return [query], []
+
     async def _expand_query(self, query: str) -> List[str]:
         """
+        [DEPRECATED] Use _enhance_query() instead for better performance.
+        
         Generate expanded queries with additional related terms for better retrieval coverage.
+        This method is kept for backward compatibility but calls the optimized _enhance_query().
         
         Args:
             query: Original query text.
@@ -425,39 +491,15 @@ class SemanticMemoryService:
         Returns:
             List of expanded queries including the original.
         """
-        if not self._config.retrieval_enable_query_expansion:
-            logger.debug("Query expansion disabled, returning original query only")
-            return [query]
-        
-        try:
-            num_expansions = self._config.retrieval_num_query_expansions
-            prompt = QUERY_EXPANSION_PROMPT.format(num_expansions=num_expansions)
-            
-            chain = self._llm.create_structured_chain(
-                system_prompt=prompt,
-                pydantic_model=QueryExpansionOutput,
-                temperature=0.3,  # Slightly creative for expansion
-            )
-            
-            user_input = f"Original Query: {query}\n\nGenerate {num_expansions} expanded queries."
-            result = await chain.ainvoke({"input": user_input})
-            
-            # Include original query + expanded queries
-            all_queries = [query] + result.expanded_queries
-            logger.debug(
-                "Query expansion: %d queries generated from original: %s",
-                len(all_queries),
-                query[:50],
-            )
-            return all_queries
-            
-        except Exception as e:
-            logger.warning("Query expansion failed: %s. Using original query only.", e)
-            return [query]
+        expanded_queries, _ = await self._enhance_query(query)
+        return expanded_queries
 
     async def _generate_hypothetical_paragraphs(self, query: str) -> List[str]:
         """
+        [DEPRECATED] Use _enhance_query() instead for better performance.
+        
         Generate hypothetical answer paragraphs for the query (HyDE technique).
+        This method is kept for backward compatibility but calls the optimized _enhance_query().
         
         Args:
             query: Original query text.
@@ -465,33 +507,8 @@ class SemanticMemoryService:
         Returns:
             List of hypothetical answer paragraphs.
         """
-        if not self._config.retrieval_enable_hypothetical_paragraphs:
-            logger.debug("Hypothetical paragraphs disabled")
-            return []
-        
-        try:
-            num_paragraphs = self._config.retrieval_num_hypothetical_paragraphs
-            prompt = HYPOTHETICAL_PARAGRAPH_PROMPT.format(num_paragraphs=num_paragraphs)
-            
-            chain = self._llm.create_structured_chain(
-                system_prompt=prompt,
-                pydantic_model=HypotheticalParagraphsOutput,
-                temperature=0.5,  # More creative for generating hypothetical answers
-            )
-            
-            user_input = f"Query: {query}\n\nGenerate {num_paragraphs} hypothetical answer paragraphs."
-            result = await chain.ainvoke({"input": user_input})
-            
-            logger.debug(
-                "Generated %d hypothetical paragraphs for query: %s",
-                len(result.paragraphs),
-                query[:50],
-            )
-            return result.paragraphs
-            
-        except Exception as e:
-            logger.warning("Hypothetical paragraph generation failed: %s", e)
-            return []
+        _, hypothetical_paragraphs = await self._enhance_query(query)
+        return hypothetical_paragraphs
 
     def _retrieve_with_vectors(
         self, 
@@ -623,12 +640,11 @@ class SemanticMemoryService:
         """
         Retrieve top-k semantically similar memories for each query text with enhanced retrieval.
 
-        Enhanced Pipeline:
-        1. Query Expansion: Generate alternative query formulations
-        2. Hypothetical Paragraphs: Generate potential answer paragraphs (HyDE)
-        3. Vector Search: Retrieve using all query variations
-        4. Re-ranking: Use LLM to re-rank results by relevance
-        5. Deduplication: Remove duplicates and return final results
+        Enhanced Pipeline (Optimized with single LLM call for steps 1-2):
+        1. Query Enhancement: Generate alternative query formulations AND hypothetical paragraphs (single API call)
+        2. Vector Search: Retrieve using all query variations
+        3. Re-ranking: Use LLM to re-rank results by relevance
+        4. Deduplication: Remove duplicates and return final results
 
         Mirrors SemanticMemorySection.retrieve_memories() (sections.py:344-378) but with
         significant enhancements for better retrieval coverage and relevance.
@@ -652,31 +668,28 @@ class SemanticMemoryService:
             hypothetical_paragraphs: List[str] = []
             
             try:
-                # Step 1: Query Expansion
-                expanded_queries = await self._expand_query(query)
+                # Step 1: Query Enhancement (Combined query expansion + hypothetical paragraphs in single API call)
+                expanded_queries, hypothetical_paragraphs = await self._enhance_query(query)
                 
-                # Step 2: Hypothetical Paragraph Generation
-                hypothetical_paragraphs = await self._generate_hypothetical_paragraphs(query)
-                
-                # Step 3: Combine all query variations for retrieval
+                # Step 2: Combine all query variations for retrieval
                 all_query_texts = expanded_queries + hypothetical_paragraphs
                 
-                # Step 4: Vector Search
+                # Step 3: Vector Search
                 top_k_per_query = self._config.retrieval_top_k_per_query
                 retrieved_memories, seen_ids = self._retrieve_with_vectors(
                     all_query_texts, top_k_per_query
                 )
                 
-                # Step 5: Re-ranking
+                # Step 4: Re-ranking
                 reranked_memories = await self._rerank_memories(query, retrieved_memories)
                 
-                # Step 6: Apply final top-k limit
+                # Step 5: Apply final top-k limit
                 final_top_k = self._config.retrieval_final_top_k
                 final_memories = reranked_memories[:final_top_k]
                 
                 all_results.append(final_memories)
                 
-                # Step 7: Transparency logging
+                # Step 6: Transparency logging
                 if self._retrieval_log is not None:
                     from memblocks.models.transparency import RetrievalEntry
                     
@@ -694,7 +707,7 @@ class SemanticMemoryService:
                         )
                     )
                 
-                # Step 8: Event bus notification
+                # Step 7: Event bus notification
                 if self._bus is not None:
                     self._bus.publish(
                         "on_memory_retrieved",

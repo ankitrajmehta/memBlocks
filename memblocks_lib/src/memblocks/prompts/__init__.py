@@ -509,6 +509,105 @@ Original Query: "database optimization techniques"
 """
 
 
+QUERY_ENHANCEMENT_PROMPT = """
+You are a query enhancement specialist for semantic memory retrieval systems.
+
+Your task is to generate both **expanded queries** AND **hypothetical answer paragraphs** in a SINGLE operation to improve retrieval coverage and accuracy.
+
+## Task 1: Query Expansion
+
+Generate {num_expansions} semantically related query formulations that:
+
+1. **Add related terms and concepts**: Include synonyms, hyponyms, hypernyms, and domain-specific terminology
+2. **Rephrase with different perspectives**: Reframe the question from different angles
+3. **Expand abbreviations and acronyms**: Make implicit terms explicit
+4. **Include contextual variations**: Consider different ways the information might be stored
+5. **Maintain semantic intent**: All expanded queries must preserve the core information need
+
+**Guidelines for Query Expansion:**
+- Each expanded query should be a complete, standalone query
+- Avoid trivial lexical variations (e.g., just changing word order)
+- Focus on semantic expansion that captures related concepts
+- Do NOT generate duplicate or near-duplicate queries
+- Keep queries concise and specific (1-2 sentences max)
+- Order by decreasing relevance to the original query
+
+## Task 2: Hypothetical Answer Paragraphs
+
+Generate {num_paragraphs} hypothetical answer paragraphs that could plausibly respond to the query. These use the HyDE (Hypothetical Document Embeddings) technique to improve retrieval by:
+
+- Bridging the embedding space gap between questions and answers
+- Capturing the semantic style and structure of actual stored memories
+- Including domain-specific terminology that appears in answers, not questions
+
+**Guidelines for Hypothetical Paragraphs:**
+1. **Write as if answering the query**: Generate realistic answer-style text, not questions
+2. **Be specific and detailed**: Include concrete facts, examples, and terminology
+3. **Vary the focus**: Each paragraph should emphasize different aspects of the query
+4. **Use natural language**: Write as a human would explain the topic
+5. **Include relevant entities**: Mention specific tools, technologies, people, or concepts
+6. **Keep it concise**: 2-4 sentences per paragraph
+7. **Be factually plausible**: Don't fabricate specific facts, but write in an answer style
+
+## Output Format (JSON only):
+
+{{{{
+  "expanded_queries": [
+    "First expanded query with related terms",
+    "Second expanded query from different perspective",
+    "Third expanded query with domain-specific terminology"
+  ],
+  "hypothetical_paragraphs": [
+    "First hypothetical answer paragraph with specific details and terminology",
+    "Second hypothetical answer paragraph emphasizing different aspects"
+  ]
+}}}}
+
+## Examples:
+
+**Example 1:**
+Original Query: "How does user authentication work in FastAPI?"
+{{{{
+  "expanded_queries": [
+    "FastAPI OAuth2 authentication implementation and JWT token handling",
+    "User login and authorization in FastAPI with security dependencies",
+    "FastAPI authentication middleware and password verification strategies"
+  ],
+  "hypothetical_paragraphs": [
+    "FastAPI implements user authentication through OAuth2 with Password flow and JWT tokens. The security utilities in fastapi.security module provide dependencies like OAuth2PasswordBearer for token validation. Typically, you create a /token endpoint that returns a JWT token after verifying credentials, and then use the token in subsequent requests via the Authorization header.",
+    "User authentication in FastAPI can be implemented using the OAuth2PasswordRequestForm for login and HTTPBearer for token verification. The authentication flow involves hashing passwords with libraries like bcrypt or passlib, generating JWT tokens with python-jose, and protecting routes with dependency injection using Depends() to verify the current user from the token."
+  ]
+}}}}
+
+**Example 2:**
+Original Query: "Python machine learning projects"
+{{{{
+  "expanded_queries": [
+    "Python ML project implementations and examples",
+    "Machine learning applications developed using Python programming language",
+    "Python-based artificial intelligence and data science projects"
+  ],
+  "hypothetical_paragraphs": [
+    "Python machine learning projects typically leverage libraries like scikit-learn for traditional ML algorithms, TensorFlow or PyTorch for deep learning, and pandas for data manipulation. Common projects include image classification with CNNs, natural language processing with transformers, recommendation systems, and time series forecasting.",
+    "Popular Python ML projects include sentiment analysis using NLTK or spaCy, computer vision applications with OpenCV and YOLO, predictive analytics with XGBoost or LightGBM, and reinforcement learning environments using Gym. These projects often integrate with Jupyter notebooks for experimentation and Flask or FastAPI for deployment."
+  ]
+}}}}
+
+**Example 3:**
+Original Query: "What are the benefits of using Docker?"
+{{{{
+  "expanded_queries": [
+    "Docker containerization advantages and use cases",
+    "Benefits of Docker for development and deployment workflows",
+    "Docker vs traditional virtualization - performance and efficiency benefits"
+  ],
+  "hypothetical_paragraphs": [
+    "Docker provides consistent development and production environments through containerization, eliminating the 'works on my machine' problem. Containers package applications with all their dependencies, making deployment faster and more reliable. Docker also enables efficient resource utilization since containers share the host OS kernel, using less memory than traditional virtual machines.",
+    "The main benefits of Docker include improved CI/CD workflows with faster build and deployment times, better scalability through orchestration tools like Kubernetes, and simplified dependency management. Docker Hub provides a vast ecosystem of pre-built images, and Docker Compose allows defining multi-container applications in a single YAML file, streamlining development and testing."
+  ]
+}}}}
+"""
+
 HYPOTHETICAL_PARAGRAPH_PROMPT = """
 You are a hypothetical answer generator for semantic memory retrieval systems.
 
@@ -634,5 +733,6 @@ __all__ = [
     "ASSISTANT_BASE_PROMPT",
     "QUERY_EXPANSION_PROMPT",
     "HYPOTHETICAL_PARAGRAPH_PROMPT",
+    "QUERY_ENHANCEMENT_PROMPT",
     "RERANKING_PROMPT",
 ]
