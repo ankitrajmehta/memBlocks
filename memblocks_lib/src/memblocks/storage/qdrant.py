@@ -380,6 +380,7 @@ class QdrantAdapter:
             logger.error("Error in hybrid retrieval from '%s': %s", collection_name, e)
             return []
 
+    #UNUSED:
     def retrieve_by_keywords_and_entities(
         self,
         collection_name: str,
@@ -388,6 +389,7 @@ class QdrantAdapter:
         top_k: int = 10,
     ) -> list:
         """
+        NOT USED CURRENTLY.  
         Scroll the collection for points whose payload 'keywords' or 'entities'
         arrays contain any of the supplied terms (OR / 'should' logic).
 
