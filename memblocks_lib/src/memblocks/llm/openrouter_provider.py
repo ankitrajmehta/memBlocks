@@ -11,6 +11,7 @@ from memblocks.logger import get_logger
 
 if TYPE_CHECKING:
     from memblocks.config import MemBlocksConfig
+    from memblocks.llm.task_settings import LLMTaskSettings
 
 logger = get_logger(__name__)
 
@@ -30,10 +31,19 @@ class OpenRouterLLMProvider(LLMProvider):
 
     The ``models`` array is sent in the request body via ``model_kwargs``,
     as required by OpenRouter's API when using an OpenAI-compatible client.
+
+    Can be instantiated either from a full ``MemBlocksConfig`` (legacy path)
+    or from a bare ``LLMTaskSettings`` + ``api_key`` (per-task path used by
+    ``MemBlocksClient`` when ``llm_settings`` is configured).
     """
 
     def __init__(self, config: "MemBlocksConfig") -> None:
         """
+        Construct from a full ``MemBlocksConfig``.
+
+        Prefer ``OpenRouterLLMProvider.from_task_settings()`` when building a
+        per-task provider inside ``MemBlocksClient``.
+
         Args:
             config: Library configuration. Reads:
                 - ``openrouter_api_key``        — required
@@ -87,6 +97,70 @@ class OpenRouterLLMProvider(LLMProvider):
             logger.debug(
                 "Arize monitoring disabled (ARIZE_SPACE_ID / ARIZE_API_KEY not set)"
             )
+
+    @classmethod
+    def from_task_settings(
+        cls,
+        task_settings: "LLMTaskSettings",
+        api_key: str,
+        arize_space_id: Optional[str] = None,
+        arize_api_key: Optional[str] = None,
+        arize_project_name: str = "memBlocks",
+    ) -> "OpenRouterLLMProvider":
+        """Construct a provider directly from ``LLMTaskSettings``.
+
+        This is the preferred path when ``MemBlocksClient`` builds per-task
+        providers from ``config.resolved_llm_settings``.
+
+        Args:
+            task_settings: Task-specific LLM settings (provider, model,
+                temperature, fallback_models, enable_thinking).
+            api_key: OpenRouter API key.
+            arize_space_id: Optional Arize monitoring space ID.
+            arize_api_key: Optional Arize monitoring API key.
+            arize_project_name: Arize project name.
+
+        Returns:
+            Configured ``OpenRouterLLMProvider`` instance.
+        """
+        instance = cls.__new__(cls)
+        instance._api_key = api_key
+        instance._model = task_settings.model
+        instance._default_temperature = task_settings.temperature
+        instance._fallback_models = task_settings.fallback_models
+        instance._enable_thinking = task_settings.enable_thinking
+
+        if instance._fallback_models:
+            logger.debug(
+                "OpenRouter fallback models configured: %s",
+                instance._fallback_models,
+            )
+        if instance._enable_thinking:
+            logger.debug("OpenRouter thinking/reasoning enabled")
+
+        if arize_space_id and arize_api_key:
+            try:
+                from openinference.instrumentation.langchain import (
+                    LangChainInstrumentor,
+                )
+                from arize.otel import register
+
+                tracer_provider = register(
+                    space_id=arize_space_id,
+                    api_key=arize_api_key,
+                    project_name=arize_project_name,
+                )
+                LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+            except ImportError:
+                logger.warning(
+                    "Arize/openinference packages not installed — monitoring disabled."
+                )
+        else:
+            logger.debug(
+                "Arize monitoring disabled (ARIZE_SPACE_ID / ARIZE_API_KEY not set)"
+            )
+
+        return instance
 
     def _get_model_kwargs(self) -> Dict[str, Any]:
         """

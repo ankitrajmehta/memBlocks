@@ -40,7 +40,7 @@ class MemoryPipeline:
         self,
         semantic_memory_service: "SemanticMemoryService",
         core_memory_service: "CoreMemoryService",
-        llm_provider: "LLMProvider",
+        summary_llm: "LLMProvider",
         config: "MemBlocksConfig",
         processing_history: Optional["ProcessingHistory"] = None,
         operation_log: Optional["OperationLog"] = None,
@@ -50,7 +50,7 @@ class MemoryPipeline:
         Args:
             semantic_memory_service: Handles semantic extraction/storage.
             core_memory_service: Handles core memory updates.
-            llm_provider: LLM for summary generation.
+            summary_llm: LLM for summary generation.
             config: Library configuration (temperatures etc.).
             processing_history: Transparency — records pipeline runs.
             operation_log: Transparency — records DB writes.
@@ -58,7 +58,7 @@ class MemoryPipeline:
         """
         self._semantic = semantic_memory_service
         self._core = core_memory_service
-        self._llm = llm_provider
+        self._summary_llm = summary_llm
         self._config = config
         self._history = processing_history
         self._log = operation_log
@@ -204,7 +204,7 @@ class MemoryPipeline:
         )
 
         try:
-            chain = self._llm.create_structured_chain(
+            chain = self._summary_llm.create_structured_chain(
                 system_prompt=SUMMARY_SYSTEM_PROMPT,
                 pydantic_model=SummaryOutput,
                 temperature=self._config.llm_recursive_summary_gen_temperature,

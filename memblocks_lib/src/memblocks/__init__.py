@@ -4,6 +4,7 @@ Public API surface — import from here for convenience:
 
     from memblocks import MemBlocksClient, MemBlocksConfig
     from memblocks import Block, Session, RetrievalResult
+    from memblocks import LLMSettings, LLMTaskSettings
     from memblocks.models import MemoryBlock, SemanticMemoryUnit, CoreMemoryUnit
     from memblocks.llm.base import LLMProvider
     from memblocks.llm.groq_provider import GroqLLMProvider
@@ -21,6 +22,7 @@ from memblocks.client import MemBlocksClient
 from memblocks.llm.base import LLMProvider
 from memblocks.llm.groq_provider import GroqLLMProvider
 from memblocks.llm.gemini_provider import GeminiLLMProvider
+from memblocks.llm.task_settings import LLMTaskSettings, LLMSettings
 
 # Stateful objects returned by the client
 from memblocks.services.block import Block
@@ -46,6 +48,8 @@ __all__ = [
     "LLMProvider",
     "GroqLLMProvider",
     "GeminiLLMProvider",
+    "LLMTaskSettings",
+    "LLMSettings",
     # Stateful objects
     "Block",
     "Session",

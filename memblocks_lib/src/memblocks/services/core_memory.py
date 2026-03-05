@@ -31,7 +31,7 @@ class CoreMemoryService:
 
     def __init__(
         self,
-        llm_provider: "LLMProvider",
+        core_llm: "LLMProvider",
         mongo_adapter: "MongoDBAdapter",
         config: "MemBlocksConfig",
         operation_log: Optional["OperationLog"] = None,
@@ -39,13 +39,13 @@ class CoreMemoryService:
     ) -> None:
         """
         Args:
-            llm_provider: LLM abstraction for core memory extraction chain.
+            core_llm: LLM abstraction for core memory extraction chain.
             mongo_adapter: MongoDB adapter for persistence.
             config: Library configuration (temperatures etc.).
             operation_log: Phase-9 transparency placeholder.
             event_bus: Phase-9 event publishing placeholder.
         """
-        self._llm = llm_provider
+        self._core_llm = core_llm
         self._mongo = mongo_adapter
         self._config = config
         self._log = operation_log
@@ -92,7 +92,7 @@ class CoreMemoryService:
         )
 
         try:
-            chain = self._llm.create_structured_chain(
+            chain = self._core_llm.create_structured_chain(
                 system_prompt=core_creation_prompt,
                 pydantic_model=CoreMemoryOutput,
                 temperature=self._config.llm_core_extraction_temperature,

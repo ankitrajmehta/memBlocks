@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from memblocks import MemBlocksClient, MemBlocksConfig
+from memblocks.llm.task_settings import LLMSettings, LLMTaskSettings
 
 LOG_DIR = Path("memblocks_cli_output")
 LOG_DIR.mkdir(exist_ok=True)
@@ -67,45 +68,45 @@ def display_retrieval_summary(client: MemBlocksClient) -> None:
     retrieval_log = client.get_retrieval_log()
     if not retrieval_log:
         return
-    
+
     last = retrieval_log.get_last_retrieval()
     if not last:
         return
-    
+
     print("\n" + "─" * 70)
     print("🔍 RETRIEVAL SUMMARY")
     print("─" * 70)
-    
+
     # Query expansion
-    expanded = getattr(last, 'expanded_queries', [])
+    expanded = getattr(last, "expanded_queries", [])
     if expanded:
         print(f"\n📢 Query Expansion ({len(expanded)} queries):")
         for i, q in enumerate(expanded[:4], 1):  # Show first 4
             print(f"  {i}. {q[:80]}{'...' if len(q) > 80 else ''}")
-    
+
     # Hypothetical paragraphs
-    hypo = getattr(last, 'hypothetical_paragraphs', [])
+    hypo = getattr(last, "hypothetical_paragraphs", [])
     if hypo:
         print(f"\n💭 Hypothetical Paragraphs ({len(hypo)} generated):")
         for i, p in enumerate(hypo[:2], 1):  # Show first 2
             print(f"  {i}. {p[:100]}{'...' if len(p) > 100 else ''}")
-    
+
     # Results
-    num_results = getattr(last, 'num_results', 0)
-    reranked = getattr(last, 'reranked', False)
-    method = getattr(last, 'retrieval_method', 'N/A')
-    
+    num_results = getattr(last, "num_results", 0)
+    reranked = getattr(last, "reranked", False)
+    method = getattr(last, "retrieval_method", "N/A")
+
     print(f"\n📊 Results: {num_results} memories")
     print(f"♻️  Re-ranked: {'✅ Yes' if reranked else '❌ No'}")
     print(f"🎯 Method: {method}")
-    
+
     # Show a few memories
-    summaries = getattr(last, 'memory_summaries', [])
+    summaries = getattr(last, "memory_summaries", [])
     if summaries:
         print(f"\n🧠 Top Memories Retrieved:")
         for i, summary in enumerate(summaries[:3], 1):
             print(f"  {i}. {summary[:90]}{'...' if len(summary) > 90 else ''}")
-    
+
     print("─" * 70)
     print(f"💾 Full logs saved to: {LOG_DIR}/retrieval_log.json")
     print("─" * 70 + "\n")
@@ -124,26 +125,62 @@ async def _run_cli() -> None:
 
     # Load config - try current dir first, then parent
     try:
-        config = MemBlocksConfig(llm_provider_name="openrouter")
+        config = MemBlocksConfig(llm_settings=LLMSettings(
+                default=LLMTaskSettings(
+                    provider="groq",
+                    model="meta-llama/llama-4-maverick-17b-128e-instruct"
+                ),
+                retrieval=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-20b"
+                ),
+                ps1_semantic_extraction=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-120b"
+                ),
+                ps2_conflict_resolution=LLMTaskSettings(
+                    provider="groq",
+                    model="meta-llama/llama-4-scout-17b-16e-instruct"
+                ),
+                core_memory_extraction=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-120b"
+                ),
+                recursive_summary=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-120b"
+                ),
+
+            )
+                                 
+        )
     except Exception as e:
         print(f"❌ Error loading config: {e}")
         print("\n💡 Make sure your .env file is in the project root")
         print("   Or run from the project root directory")
         return
-    
+
     # Display retrieval configuration
     print("\n" + "=" * 70)
     print("  memBlocks CLI - Enhanced Semantic Retrieval")
     print("=" * 70)
     print("\n🔧 Retrieval Configuration:")
-    print(f"  📢 Query Expansion: {'✅ Enabled' if config.retrieval_enable_query_expansion else '❌ Disabled'}")
+    print(
+        f"  📢 Query Expansion: {'✅ Enabled' if config.retrieval_enable_query_expansion else '❌ Disabled'}"
+    )
     print(f"     - Expansions per query: {config.retrieval_num_query_expansions}")
-    print(f"  💭 Hypothetical Paragraphs: {'✅ Enabled' if config.retrieval_enable_hypothetical_paragraphs else '❌ Disabled'}")
-    print(f"     - Paragraphs per query: {config.retrieval_num_hypothetical_paragraphs}")
-    print(f"  ♻️  Re-ranking: {'✅ Enabled' if config.retrieval_enable_reranking else '❌ Disabled'}")
+    print(
+        f"  💭 Hypothetical Paragraphs: {'✅ Enabled' if config.retrieval_enable_hypothetical_paragraphs else '❌ Disabled'}"
+    )
+    print(
+        f"     - Paragraphs per query: {config.retrieval_num_hypothetical_paragraphs}"
+    )
+    print(
+        f"  ♻️  Re-ranking: {'✅ Enabled' if config.retrieval_enable_reranking else '❌ Disabled'}"
+    )
     print(f"  📊 Final top-k: {config.retrieval_final_top_k}")
     print("=" * 70)
-    
+
     client = MemBlocksClient(config)
 
     # Track if we've already displayed the retrieval summary for this query
@@ -159,8 +196,11 @@ async def _run_cli() -> None:
             retrieval_log = client.get_retrieval_log()
             if retrieval_log:
                 last = retrieval_log.get_last_retrieval()
-                if last and getattr(last, 'timestamp', None) != _last_retrieval_timestamp:
-                    _last_retrieval_timestamp = getattr(last, 'timestamp', None)
+                if (
+                    last
+                    and getattr(last, "timestamp", None) != _last_retrieval_timestamp
+                ):
+                    _last_retrieval_timestamp = getattr(last, "timestamp", None)
                     # Display immediately since save is async
                     display_retrieval_summary(client)
 
@@ -233,7 +273,7 @@ async def _run_cli() -> None:
     print("   Type 'quit' to exit")
     print("   Type 'logs' to view latest retrieval details")
     print("=" * 70 + "\n")
-    
+
     try:
         while True:
             try:
@@ -245,7 +285,7 @@ async def _run_cli() -> None:
                 continue
             if user_input.lower() in ("quit", "exit", "q"):
                 break
-            
+
             # Special command to show retrieval logs
             if user_input.lower() == "logs":
                 display_retrieval_summary(client)
@@ -253,7 +293,8 @@ async def _run_cli() -> None:
 
             try:
                 print("🔄 Retrieving memories...")
-                
+                start_time = asyncio.get_event_loop().time()
+
                 # Retrieve memory context
                 context = await block.retrieve(user_input)
                 memory_window = await session.get_memory_window()
@@ -278,7 +319,11 @@ async def _run_cli() -> None:
                     + memory_window
                     + [{"role": "user", "content": user_input}]
                 )
-                ai_response = await client.llm.chat(messages=messages_for_llm)
+                ai_response = await client.conversation_llm.chat(
+                    messages=messages_for_llm
+                )
+                end_time = asyncio.get_event_loop().time()
+                logger.info(f"LLM response time: {end_time - start_time:.2f} seconds")
 
                 print(f"\n🤖 Assistant: {ai_response}\n")
 

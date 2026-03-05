@@ -10,11 +10,34 @@ module-level singleton), this class:
 - defaults env_file to ".env" (cwd-relative, works in any project)
 - adds new fields required by the library (database_name, memory_window, etc.)
 - is instantiated by the caller, never at import time
+
+Per-task LLM configuration:
+    Pass an ``LLMSettings`` instance to ``llm_settings`` to assign a different
+    provider, model, and temperature to each task (PS1 extraction, PS2 conflict
+    resolution, retrieval, core memory, summary, conversation).  When
+    ``llm_settings`` is ``None`` the client auto-constructs it from the flat
+    legacy fields below so existing code continues to work unchanged.
+
+    from memblocks.llm.task_settings import LLMSettings, LLMTaskSettings
+
+    config = MemBlocksConfig(
+        openrouter_api_key="...",
+        llm_settings=LLMSettings(
+            default=LLMTaskSettings(provider="openrouter",
+                                    model="meta-llama/llama-4-maverick-17b-128e-instruct",
+                                    temperature=0.0),
+            retrieval=LLMTaskSettings(provider="groq",
+                                      model="llama-3.1-8b-instant",
+                                      temperature=0.4),
+        ),
+    )
 """
 
 from typing import List, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from memblocks.llm.task_settings import LLMSettings, LLMTaskSettings
 
 
 class MemBlocksConfig(BaseSettings):
@@ -84,6 +107,55 @@ class MemBlocksConfig(BaseSettings):
     llm_memory_update_temperature: float = Field(
         0.0, validation_alias="LLM_MEMORY_UPDATE_TEMPERATURE"
     )
+
+    # -------------------------------------------------------------------------
+    # Per-task LLM Settings (optional — overrides the flat fields above)
+    # -------------------------------------------------------------------------
+    llm_settings: Optional[LLMSettings] = Field(
+        None,
+        description=(
+            "Per-task LLM configuration. When set, each task can use a "
+            "different provider, model, and temperature. When None, the "
+            "client auto-constructs LLMSettings from the flat fields above "
+            "(llm_provider_name, llm_model, llm_*_temperature) so existing "
+            "code continues to work unchanged."
+        ),
+    )
+
+    @property
+    def resolved_llm_settings(self) -> LLMSettings:
+        """Return the effective ``LLMSettings``, constructing from flat fields if needed.
+
+        When ``llm_settings`` is explicitly provided it is returned as-is.
+        Otherwise a single ``LLMTaskSettings`` is built from the flat legacy
+        fields and used as the ``default`` for all tasks, with per-task
+        temperature overrides applied individually.
+
+        This property is the single place ``MemBlocksClient`` reads from —
+        services never touch the flat temperature fields directly.
+        """
+        if self.llm_settings is not None:
+            return self.llm_settings
+
+        # Build per-task settings from flat legacy fields
+        def _make(temperature: float) -> LLMTaskSettings:
+            return LLMTaskSettings(
+                provider=self.llm_provider_name,
+                model=self.llm_model,
+                temperature=temperature,
+                fallback_models=self.openrouter_fallback_models_list,
+                enable_thinking=self.openrouter_enable_thinking,
+            )
+
+        return LLMSettings(
+            default=_make(self.llm_convo_temperature),
+            conversation=_make(self.llm_convo_temperature),
+            ps1_semantic_extraction=_make(self.llm_semantic_extraction_temperature),
+            ps2_conflict_resolution=_make(self.llm_memory_update_temperature),
+            retrieval=_make(0.4),  # hardcoded default for query enhancement
+            core_memory_extraction=_make(self.llm_core_extraction_temperature),
+            recursive_summary=_make(self.llm_recursive_summary_gen_temperature),
+        )
 
     # -------------------------------------------------------------------------
     # MongoDB
