@@ -3,9 +3,11 @@
 from memblocks.llm.base import LLMProvider
 from memblocks.llm.groq_provider import GroqLLMProvider
 from memblocks.llm.gemini_provider import GeminiLLMProvider
+from memblocks.llm.openrouter_provider import OpenRouterLLMProvider
 
 __all__ = [
     "LLMProvider",
     "GroqLLMProvider",
     "GeminiLLMProvider",
+    "OpenRouterLLMProvider",
 ]

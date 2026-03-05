@@ -12,7 +12,7 @@ module-level singleton), this class:
 - is instantiated by the caller, never at import time
 """
 
-from typing import Optional
+from typing import List, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -39,6 +39,33 @@ class MemBlocksConfig(BaseSettings):
 
     # Google Gemini API
     gemini_api_key: Optional[str] = Field(None, validation_alias="GEMINI_API_KEY")
+
+    # OpenRouter API
+    openrouter_api_key: Optional[str] = Field(
+        None, validation_alias="OPENROUTER_API_KEY"
+    )
+    openrouter_fallback_models: Optional[str] = Field(
+        None,
+        validation_alias="OPENROUTER_FALLBACK_MODELS",
+        description=(
+            "Comma-separated fallback model IDs tried in order if the primary model fails. "
+            "Example: anthropic/claude-3.5-sonnet,gryphe/mythomax-l2-13b"
+        ),
+    )
+    openrouter_enable_thinking: bool = Field(
+        False,
+        validation_alias="OPENROUTER_ENABLE_THINKING",
+        description="Enable extended thinking/reasoning for supported OpenRouter models.",
+    )
+
+    @property
+    def openrouter_fallback_models_list(self) -> List[str]:
+        """Parse the comma-separated fallback models string into a list."""
+        if not self.openrouter_fallback_models:
+            return []
+        return [
+            m.strip() for m in self.openrouter_fallback_models.split(",") if m.strip()
+        ]
 
     llm_model: str = Field(
         "meta-llama/llama-4-maverick-17b-128e-instruct",

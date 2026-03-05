@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from memblocks.config import MemBlocksConfig
 from memblocks.llm.groq_provider import GroqLLMProvider
 from memblocks.llm.gemini_provider import GeminiLLMProvider
+from memblocks.llm.openrouter_provider import OpenRouterLLMProvider
 from memblocks.storage.embeddings import EmbeddingProvider
 from memblocks.storage.mongo import MongoDBAdapter
 from memblocks.storage.qdrant import QdrantAdapter
@@ -110,10 +111,12 @@ class MemBlocksClient:
             llm_provider = GroqLLMProvider(config)
         elif self.config.llm_provider_name == "gemini":
             llm_provider = GeminiLLMProvider(config)
+        elif self.config.llm_provider_name == "openrouter":
+            llm_provider = OpenRouterLLMProvider(config)
         else:
             raise ValueError(
                 f"Unknown LLM provider: {self.config.llm_provider_name}. "
-                "Supported providers: 'groq', 'gemini'"
+                "Supported providers: 'groq', 'gemini', 'openrouter'"
             )
 
         self.llm: "LLMProvider" = llm_provider

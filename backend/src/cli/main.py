@@ -124,10 +124,10 @@ async def _run_cli() -> None:
 
     # Load config - try current dir first, then parent
     try:
-        config = MemBlocksConfig()
+        config = MemBlocksConfig(llm_provider_name="openrouter")
     except Exception as e:
         print(f"❌ Error loading config: {e}")
-        print("\n💡 Make sure your .env file is in the project root (d:/MemBlocks)")
+        print("\n💡 Make sure your .env file is in the project root")
         print("   Or run from the project root directory")
         return
     
