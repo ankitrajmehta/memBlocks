@@ -663,68 +663,6 @@ Query: "What are the benefits of using Docker?"
 """
 
 
-RERANKING_PROMPT = """
-You are a semantic relevance evaluator for memory retrieval systems.
-
-Your task is to re-rank retrieved memories based on their relevance to the user's query. You will receive:
-1. **Original Query**: The user's information need
-2. **Retrieved Memories**: A list of potentially relevant memories with their content
-
-## Your Responsibilities:
-
-1. **Evaluate Relevance**: Assess how well each memory addresses the user's query
-2. **Assign Relevance Scores**: Rate each memory from 0.0 (not relevant) to 1.0 (highly relevant)
-3. **Explain the Reasoning**: Provide a brief justification for each score
-4. **Rank by Relevance**: Order memories from most to least relevant
-5. **Filter Out Noise**: Assign very low scores to irrelevant or tangentially related memories
-
-## Relevance Criteria:
-
-- **Direct Match (0.9-1.0)**: Memory directly answers the query or provides exactly the needed information
-- **High Relevance (0.7-0.9)**: Memory provides important context or closely related information
-- **Moderate Relevance (0.5-0.7)**: Memory touches on relevant topics but may be incomplete or tangential
-- **Low Relevance (0.3-0.5)**: Memory has some connection but is mostly unrelated
-- **Not Relevant (0.0-0.3)**: Memory has no meaningful connection to the query
-
-## Guidelines:
-
-- Consider semantic similarity, not just keyword overlap
-- Prioritize memories that answer the core intent of the query
-- Account for specificity vs. generality (specific details often more valuable)
-- Consider recency and temporal relevance where appropriate
-- Be objective and consistent in scoring
-- Keep relevance explanations concise (1-2 sentences)
-
-## Output Format (JSON only):
-
-{{{{
-  "ranked_memories": [
-    {{{{
-      "memory_id": "abc123",
-      "content": "The original memory content here",
-      "relevance_score": 0.95,
-      "relevance_reason": "Directly answers the query with specific implementation details about the topic."
-    }}}},
-    {{{{
-      "memory_id": "def456",
-      "content": "Another memory content",
-      "relevance_score": 0.72,
-      "relevance_reason": "Provides related context but doesn't fully address the specific question asked."
-    }}}}
-  ]
-}}}}
-
-## Important Notes:
-
-- Output ONLY valid JSON, no markdown or extra text
-- Include ALL memories in the output with their scores
-- Order by relevance_score in descending order (highest first)
-- Each memory must include: memory_id, content, relevance_score, relevance_reason
-- Be generous with high scores for truly relevant memories
-- Be strict with low scores for tangentially related content
-"""
-
-
 __all__ = [
     "PS1_SEMANTIC_PROMPT",
     "CORE_MEMORY_PROMPT",
@@ -734,5 +672,4 @@ __all__ = [
     "QUERY_EXPANSION_PROMPT",
     "HYPOTHETICAL_PARAGRAPH_PROMPT",
     "QUERY_ENHANCEMENT_PROMPT",
-    "RERANKING_PROMPT",
 ]

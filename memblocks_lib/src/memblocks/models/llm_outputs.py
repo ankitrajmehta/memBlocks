@@ -148,29 +148,6 @@ class QueryEnhancementOutput(BaseModel):
     )
 
 
-class RankedMemory(BaseModel):
-    """Single ranked memory with relevance explanation."""
-
-    memory_id: str = Field(description="Unique identifier of the memory")
-    content: str = Field(description="Content of the memory")
-    relevance_score: float = Field(
-        ge=0.0,
-        le=1.0,
-        description="Relevance score between 0 and 1"
-    )
-    relevance_reason: str = Field(
-        description="Brief explanation of why this memory is relevant to the query"
-    )
-
-
-class ReRankingOutput(BaseModel):
-    """Output model for re-ranking retrieval results."""
-
-    ranked_memories: List[RankedMemory] = Field(
-        description="List of memories ranked by relevance to the query, with explanations"
-    )
-
-
 __all__ = [
     "SemanticExtractionOutput",
     "SemanticMemoriesOutput",
@@ -183,6 +160,4 @@ __all__ = [
     "QueryExpansionOutput",
     "HypotheticalParagraphsOutput",
     "QueryEnhancementOutput",
-    "RankedMemory",
-    "ReRankingOutput",
 ]

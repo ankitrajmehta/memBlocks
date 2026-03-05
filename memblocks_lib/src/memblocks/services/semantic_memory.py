@@ -14,8 +14,8 @@ from memblocks.models.llm_outputs import (
     QueryExpansionOutput,
     HypotheticalParagraphsOutput,
     QueryEnhancementOutput,
-    ReRankingOutput,
 )
+from memblocks.services.reranker import CohereReranker
 from memblocks.models.units import (
     MemoryOperation,
     MemoryUnitMetaData,
@@ -27,7 +27,6 @@ from memblocks.prompts import (
     QUERY_EXPANSION_PROMPT,
     HYPOTHETICAL_PARAGRAPH_PROMPT,
     QUERY_ENHANCEMENT_PROMPT,
-    RERANKING_PROMPT,
 )
 from memblocks.logger import get_logger
 
@@ -48,7 +47,7 @@ class SemanticMemoryService:
     - PS2 conflict resolution
     - Vector storage via QdrantAdapter (with SPLADE sparse vectors when enabled)
     - Enhanced vector retrieval with SPLADE hybrid search, query expansion,
-      hypothetical paragraphs, and LLM-based re-ranking
+      hypothetical paragraphs, and Cohere-based re-ranking
 
     Replaces:
     - SemanticMemorySection.extract_semantic_memories() (sections.py:53-125)
@@ -60,14 +59,18 @@ class SemanticMemoryService:
     (old store_memory() was annotated -> bool but returned List[MemoryOperation]).
 
     Enhancement: retrieve() now supports query expansion, hypothetical paragraph generation,
-    and LLM-based re-ranking for improved semantic retrieval coverage and relevance.
+    and Cohere-based re-ranking for improved semantic retrieval coverage and relevance
+    with reduced latency compared to LLM-based re-ranking.
 
     Per-task LLM providers:
     - ps1_llm:       Used for PS1 semantic memory extraction.
     - ps2_llm:       Used for PS2 conflict resolution (ADD/UPDATE/DELETE).
-    - retrieval_llm: Used for query enhancement (HyDE + expansion) and re-ranking.
+    - retrieval_llm: Used for query enhancement (HyDE + expansion).
     Each can be a different model/provider, configured via ``LLMSettings`` in
     ``MemBlocksConfig``.
+    
+    Re-ranking: Uses Cohere's dedicated re-rank API (rerank-english-v3.0) instead of
+    LLM-based re-ranking for faster, more accurate relevance scoring.
     """
 
     def __init__(
@@ -82,6 +85,7 @@ class SemanticMemoryService:
         operation_log: Optional["OperationLog"] = None,
         retrieval_log: Optional["RetrievalLog"] = None,
         event_bus: Optional[Any] = None,
+        cohere_api_key: Optional[str] = None,
     ) -> None:
         """
         Args:
@@ -92,11 +96,13 @@ class SemanticMemoryService:
             config: Library configuration (temperatures etc.).
             ps2_llm: LLM provider for PS2 conflict resolution. Defaults to
                 ``ps1_llm`` when not provided.
-            retrieval_llm: LLM provider for query enhancement and re-ranking.
+            retrieval_llm: LLM provider for query enhancement (HyDE + expansion).
                 Defaults to ``ps1_llm`` when not provided.
             operation_log: Phase-9 transparency placeholder.
             retrieval_log: Records every retrieval for observability.
             event_bus: Phase-9 event publishing placeholder.
+            cohere_api_key: Cohere API key for re-ranking. If None, reads from
+                COHERE_API_KEY environment variable.
         """
         self._ps1_llm = ps1_llm
         self._ps2_llm = ps2_llm if ps2_llm is not None else ps1_llm
@@ -110,6 +116,10 @@ class SemanticMemoryService:
         self._log = operation_log
         self._retrieval_log = retrieval_log
         self._bus = event_bus
+        
+        # Initialize Cohere re-ranker (lazy initialization on first use)
+        self._reranker: Optional[CohereReranker] = None
+        self._cohere_api_key = cohere_api_key
 
     # ------------------------------------------------------------------ #
     # PS1 Extraction
@@ -735,11 +745,20 @@ class SemanticMemoryService:
         )
         return deduplicated, seen_ids
 
+    def _get_reranker(self) -> CohereReranker:
+        """Lazy initialization of Cohere re-ranker."""
+        if self._reranker is None:
+            self._reranker = CohereReranker(api_key=self._cohere_api_key)
+        return self._reranker
+
     async def _rerank_memories(
         self, query: str, memories: List[SemanticMemoryUnit]
     ) -> List[SemanticMemoryUnit]:
         """
-        Re-rank retrieved memories using LLM-based relevance assessment.
+        Re-rank retrieved memories using Cohere's re-rank API.
+
+        This replaces the previous LLM-based re-ranking with Cohere's dedicated
+        re-ranking model, which is significantly faster and more accurate.
 
         Args:
             query: Original query text.
@@ -753,55 +772,21 @@ class SemanticMemoryService:
             return memories
 
         try:
-            # Prepare memories for re-ranking
-            memories_data = [
-                {
-                    "memory_id": m.memory_id or "",
-                    "content": m.content,
-                    "type": m.type,
-                    "keywords": m.keywords or [],
-                    "entities": m.entities or [],
-                }
-                for m in memories
-            ]
-
-            chain = self._retrieval_llm.create_structured_chain(
-                system_prompt=RERANKING_PROMPT,
-                pydantic_model=ReRankingOutput,
-                temperature=0.0,  # Deterministic for ranking
+            reranker = self._get_reranker()
+            
+            # Use Cohere's re-ranking (no top_n limit here, we apply final_top_k later)
+            reranked = await reranker.rerank(
+                query=query,
+                memories=memories,
+                top_n=None,  # Get all ranked results
             )
-
-            user_input = (
-                f"Original Query: {query}\n\n"
-                f"Retrieved Memories:\n{json.dumps(memories_data, indent=2)}\n\n"
-                f"Re-rank these memories by relevance to the query."
-            )
-
-            result = await chain.ainvoke({"input": user_input})
-
-            # Create a mapping from memory_id to original memory
-            memory_map = {m.memory_id: m for m in memories if m.memory_id}
-
-            # Reconstruct ordered list based on re-ranking
-            reranked: List[SemanticMemoryUnit] = []
-            for ranked in result.ranked_memories:
-                if ranked.memory_id in memory_map:
-                    memory = memory_map[ranked.memory_id]
-                    # Optionally store relevance info in metadata
-                    logger.debug(
-                        "Memory %s: score=%.2f, reason=%s",
-                        ranked.memory_id[:8],
-                        ranked.relevance_score,
-                        ranked.relevance_reason[:60],
-                    )
-                    reranked.append(memory)
-
+            
             logger.debug(
                 "Re-ranked %d memories for query: %s",
                 len(reranked),
                 query[:50],
             )
-
+            
             return reranked
 
         except Exception as e:
