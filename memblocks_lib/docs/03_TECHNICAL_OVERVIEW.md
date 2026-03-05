@@ -57,8 +57,11 @@ memblocks_lib/
     │
     ├── llm/                 # LLM abstraction
     │   ├── __init__.py
-    │   ├── base.py          # LLMProvider (ABC)
-    │   └── groq_provider.py # GroqLLMProvider
+    │   ├── base.py              # LLMProvider (ABC)
+    │   ├── task_settings.py     # LLMTaskSettings, LLMSettings
+    │   ├── groq_provider.py     # GroqLLMProvider
+    │   ├── gemini_provider.py   # GeminiLLMProvider
+    │   └── openrouter_provider.py # OpenRouterLLMProvider
     │
     ├── services/            # Business logic
     │   ├── __init__.py
@@ -137,25 +140,38 @@ class MemBlocksClient:
         self.mongo = MongoDBAdapter(config)
         self.embeddings = EmbeddingProvider(config)
         self.qdrant = QdrantAdapter(config, self.embeddings)
-        self.llm = GroqLLMProvider(config)
-        
-        # 2. Transparency objects
+
+        # 2. Per-task LLM providers (resolved from config.resolved_llm_settings)
+        llm_settings = config.resolved_llm_settings
+        self.conversation_llm = self._build_provider(llm_settings.for_task("conversation"), config)
+        self._ps1_llm  = self._build_provider(llm_settings.for_task("ps1_semantic_extraction"), config)
+        self._ps2_llm  = self._build_provider(llm_settings.for_task("ps2_conflict_resolution"), config)
+        self._core_llm = self._build_provider(llm_settings.for_task("core_memory_extraction"), config)
+        self._summary_llm = self._build_provider(llm_settings.for_task("recursive_summary"), config)
+        # self.llm is a property alias for self.conversation_llm (backward compatible)
+
+        # 3. Transparency objects
         self.event_bus = EventBus()
         self.operation_log = OperationLog()
         self.retrieval_log = RetrievalLog()
-        
-        # 3. Services (receive adapters + transparency objects)
+
+        # 4. Services (receive their specific per-task providers)
         self._users = UserManager(self.mongo)
         self._core = CoreMemoryService(
-            self.llm, self.mongo, config, self.operation_log, self.event_bus
+            core_llm=self._core_llm, mongo=self.mongo, config=config,
+            operation_log=self.operation_log, event_bus=self.event_bus
         )
         self._blocks = BlockManager(
-            self.mongo, self.qdrant, self.embeddings, self.llm,
-            self._core, config, self.operation_log, self.retrieval_log
+            mongo=self.mongo, qdrant=self.qdrant, embeddings=self.embeddings,
+            ps1_llm=self._ps1_llm, ps2_llm=self._ps2_llm,
+            core_memory_service=self._core, config=config,
+            operation_log=self.operation_log, retrieval_log=self.retrieval_log
         )
         self._sessions = SessionManager(
-            self.mongo, self.llm, self.qdrant, self.embeddings,
-            self._core, config, ...
+            mongo=self.mongo, ps1_llm=self._ps1_llm, ps2_llm=self._ps2_llm,
+            summary_llm=self._summary_llm, qdrant=self.qdrant,
+            embeddings=self.embeddings, core_memory_service=self._core,
+            config=config, ...
         )
 ```
 
@@ -189,16 +205,20 @@ from memblocks import (
     # Entry point
     MemBlocksClient,
     MemBlocksConfig,
-    
+
     # Stateful objects (returned by client methods)
     Block,        # block.retrieve(), block.core_retrieve(), etc.
     Session,      # session.get_memory_window(), session.add()
     RetrievalResult,  # context.to_prompt_string(), context.is_empty()
-    
-    # LLM (for custom providers)
+
+    # LLM (for custom providers or per-task config)
     LLMProvider,
     GroqLLMProvider,
-    
+    GeminiLLMProvider,
+    OpenRouterLLMProvider,
+    LLMTaskSettings,
+    LLMSettings,
+
     # Models (for type hints)
     MemoryBlock,
     MemoryBlockMetaData,
@@ -223,7 +243,7 @@ summary = await session.get_recursive_summary() # Get summary
 
 # Build prompt and call YOUR LLM
 system = "You are helpful.\n\n" + context.to_prompt_string()
-response = await client.llm.chat([...])
+response = await client.conversation_llm.chat([...])
 
 # Persist the turn
 await session.add(user_msg=user_msg, ai_response=response)
@@ -262,13 +282,27 @@ class MemBlocksConfig(BaseSettings):
 
 | Field | Env Var | Default | Description |
 |-------|---------|---------|-------------|
-| `groq_api_key` | `GROQ_API_KEY` | *required* | Groq API key |
-| `llm_model` | `LLM_MODEL` | `meta-llama/llama-4-maverick-17b-128e-instruct` | Model identifier |
-| `llm_convo_temperature` | `LLM_CONVO_TEMPERATURE` | `0.7` | Chat response temperature |
-| `llm_semantic_extraction_temperature` | `LLM_SEMANTIC_EXTRACTION_TEMPERATURE` | `0.0` | PS1 extraction temp |
-| `llm_core_extraction_temperature` | `LLM_CORE_EXTRACTION_TEMPERATURE` | `0.0` | Core memory temp |
-| `llm_recursive_summary_gen_temperature` | `LLM_RECURSIVE_SUMMARY_GEN_TEMPERATURE` | `0.3` | Summary temp |
-| `llm_memory_update_temperature` | `LLM_MEMORY_UPDATE_TEMPERATURE` | `0.0` | PS2 conflict temp |
+| `llm_provider_name` | `LLM_PROVIDER_NAME` | `groq` | Active provider: `"groq"`, `"gemini"`, or `"openrouter"` (used when `llm_settings` is not set) |
+| `groq_api_key` | `GROQ_API_KEY` | `None` | Groq API key |
+| `gemini_api_key` | `GEMINI_API_KEY` | `None` | Google Gemini API key |
+| `openrouter_api_key` | `OPENROUTER_API_KEY` | `None` | OpenRouter API key |
+| `llm_model` | `LLM_MODEL` | `meta-llama/llama-4-maverick-17b-128e-instruct` | Model identifier (used when `llm_settings` is not set) |
+| `llm_settings` | *(code only)* | `None` | `LLMSettings` object for per-task provider routing; when set, takes precedence over flat fields |
+| `openrouter_fallback_models` | `OPENROUTER_FALLBACK_MODELS` | `""` | Comma-separated fallback model IDs for OpenRouter |
+| `openrouter_enable_thinking` | `OPENROUTER_ENABLE_THINKING` | `false` | Enable extended thinking for OpenRouter |
+| `llm_convo_temperature` | `LLM_CONVO_TEMPERATURE` | `0.7` | Chat response temperature (legacy flat config) |
+| `llm_semantic_extraction_temperature` | `LLM_SEMANTIC_EXTRACTION_TEMPERATURE` | `0.0` | PS1 extraction temp (legacy flat config) |
+| `llm_core_extraction_temperature` | `LLM_CORE_EXTRACTION_TEMPERATURE` | `0.0` | Core memory temp (legacy flat config) |
+| `llm_recursive_summary_gen_temperature` | `LLM_RECURSIVE_SUMMARY_GEN_TEMPERATURE` | `0.3` | Summary temp (legacy flat config) |
+| `llm_memory_update_temperature` | `LLM_MEMORY_UPDATE_TEMPERATURE` | `0.0` | PS2 conflict temp (legacy flat config) |
+
+**`resolved_llm_settings` property:**
+
+`MemBlocksConfig.resolved_llm_settings` returns:
+- `llm_settings` as-is when set
+- An auto-constructed `LLMSettings` from the flat legacy fields when `llm_settings` is `None`
+
+This means existing code that uses flat env vars continues to work without any changes.
 
 **Temperature Rationale:**
 - `0.0` for extraction tasks → deterministic, consistent outputs
@@ -947,86 +981,59 @@ Uses `langchain_groq.ChatGroq` for structured outputs and chat.
 
 **Location:** `llm/groq_provider.py`
 
-#### Constructor
+**Structured output** uses Groq's native `json_schema` mode.
+
+**Factory:** `GroqLLMProvider.from_task_settings(task_settings, api_key)` — used internally when building per-task providers.
+
+### GeminiLLMProvider
+
+Uses `langchain_google_genai.ChatGoogleGenerativeAI` for structured outputs and chat.
+
+**Location:** `llm/gemini_provider.py`
+
+**Structured output** uses Gemini's native structured output mode (`llm.with_structured_output(model, include_raw=False)`).
+
+**Factory:** `GeminiLLMProvider.from_task_settings(task_settings, api_key)`.
+
+### OpenRouterLLMProvider
+
+Uses `langchain_openai.ChatOpenAI` pointed at the OpenRouter API base URL.
+
+**Location:** `llm/openrouter_provider.py`
+
+**Unique features:**
+- `fallback_models` — list of model IDs tried in order when the primary model fails
+- `enable_thinking` — passes `extra_body={"enable_thinking": True}` to the API for reasoning models
+
+**Factory:** `OpenRouterLLMProvider.from_task_settings(task_settings, api_key)`.
+
+### Per-Task LLM System
+
+**Location:** `llm/task_settings.py`
 
 ```python
-class GroqLLMProvider(LLMProvider):
-    def __init__(self, config: MemBlocksConfig):
-        api_key = config.groq_api_key
-        if not api_key:
-            raise ValueError("GROQ_API_KEY not set")
-        
-        self._api_key = api_key
-        self._model = config.llm_model
-        self._default_temperature = config.llm_convo_temperature
-        
-        # Optional Arize instrumentation
-        if config.arize_space_id and config.arize_api_key:
-            self._setup_arize(config)
+class LLMTaskSettings(BaseModel):
+    provider: str                        # "groq" | "gemini" | "openrouter"
+    model: str
+    temperature: float = 0.0
+    fallback_models: List[str] = []      # OpenRouter only
+    enable_thinking: bool = False        # OpenRouter only
+
+class LLMSettings(BaseModel):
+    default: LLMTaskSettings             # Required; fallback for all tasks
+    conversation: Optional[LLMTaskSettings] = None
+    ps1_semantic_extraction: Optional[LLMTaskSettings] = None
+    ps2_conflict_resolution: Optional[LLMTaskSettings] = None
+    retrieval: Optional[LLMTaskSettings] = None
+    core_memory_extraction: Optional[LLMTaskSettings] = None
+    recursive_summary: Optional[LLMTaskSettings] = None
+
+    def for_task(self, task_name: str) -> LLMTaskSettings:
+        """Return the override for task_name, or default."""
+        return getattr(self, task_name, None) or self.default
 ```
 
-#### Structured Chain Creation
-
-Uses Groq's native JSON schema mode:
-
-```python
-def create_structured_chain(
-    self,
-    system_prompt: str,
-    pydantic_model: Type[BaseModel],
-    temperature: float = 0.0,
-) -> Any:
-    llm = ChatGroq(
-        model=self._model,
-        temperature=temperature,
-        groq_api_key=self._api_key,
-    )
-    
-    # Native JSON schema mode (not tool calling)
-    structured_llm = llm.with_structured_output(
-        pydantic_model,
-        method="json_schema",
-        include_raw=False,  # Only return parsed Pydantic object
-    )
-    
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("user", "{input}"),
-    ])
-    
-    return prompt | structured_llm
-```
-
-**Usage:**
-
-```python
-chain = llm_provider.create_structured_chain(
-    system_prompt=PS1_SEMANTIC_PROMPT,
-    pydantic_model=SemanticMemoriesOutput,
-    temperature=0.0,
-)
-
-result = await chain.ainvoke({"input": conversation_text})
-# result is a SemanticMemoriesOutput instance
-```
-
-#### Chat Method
-
-```python
-async def chat(
-    self,
-    messages: List[Dict[str, str]],
-    temperature: Optional[float] = None,
-) -> str:
-    effective_temp = temperature or self._default_temperature
-    llm = ChatGroq(
-        model=self._model,
-        temperature=effective_temp,
-        groq_api_key=self._api_key,
-    )
-    response = await llm.ainvoke(messages)
-    return response.content
-```
+`MemBlocksClient._build_provider(task_settings, config)` instantiates the correct provider class based on `task_settings.provider` and reads the API key from `config`.
 
 ---
 
@@ -1131,7 +1138,7 @@ All 5 prompts are centralized in `prompts/__init__.py`.
 
 **Purpose:** Base system prompt for chat responses.
 
-**Used by:** `ChatEngine._build_system_prompt()`
+**Used by:** The caller — include in your system prompt as a starting point for the conversation LLM.
 
 ```python
 ASSISTANT_BASE_PROMPT = """You are a helpful AI assistant with access to persistent memory.
@@ -1152,7 +1159,7 @@ When using context:
 | `PS2_MEMORY_UPDATE_PROMPT` | SemanticMemoryService | `store()` | `PS2MemoryUpdateOutput` |
 | `CORE_MEMORY_PROMPT` | CoreMemoryService | `extract()` | `CoreMemoryOutput` |
 | `SUMMARY_SYSTEM_PROMPT` | MemoryPipeline | `_generate_summary()` | `SummaryOutput` |
-| `ASSISTANT_BASE_PROMPT` | ChatEngine | `_build_system_prompt()` | (plain text) |
+| `ASSISTANT_BASE_PROMPT` | *(user-controlled)* | *(included in system prompt by user)* | (plain text) |
 
 ---
 
@@ -1181,14 +1188,15 @@ class OpenAIProvider(LLMProvider):
         return response.choices[0].message.content
 ```
 
-Then inject into `MemBlocksClient`:
+Then inject into `MemBlocksClient` after construction:
 
 ```python
-client = MemBlocksClient(
-    config,
-    llm_provider=OpenAIProvider(api_key="sk-xxx"),
-)
+client = MemBlocksClient(config)
+client.conversation_llm = OpenAIProvider(api_key="sk-xxx")
+# client.llm is a property alias for client.conversation_llm
 ```
+
+> **Note:** `conversation_llm` only overrides the conversation provider. Internal pipeline tasks (PS1, PS2, core memory, summary) continue using the providers resolved from config. To override those too, use `LLMSettings` / `LLMTaskSettings` in the config instead.
 
 ---
 
@@ -1269,7 +1277,7 @@ class MemoryPipeline:
         self,
         semantic_memory_service: SemanticMemoryService,
         core_memory_service: CoreMemoryService,
-        llm_provider: LLMProvider,
+        summary_llm: LLMProvider,
         config: MemBlocksConfig,
         keep_last_n: int = 4,
         processing_history: Optional[ProcessingHistory] = None,
@@ -1278,7 +1286,7 @@ class MemoryPipeline:
     ):
         self._semantic = semantic_memory_service
         self._core = core_memory_service
-        self._llm = llm_provider
+        self._llm = summary_llm
         self._config = config
         self._keep_last_n = keep_last_n
 ```
@@ -1533,7 +1541,7 @@ The library no longer includes a `ChatEngine`. Instead, users implement their ow
 │  3. BUILD PROMPT & CALL LLM (USER CONTROLS THIS)                │
 │     ┌─────────────────────────────────────────────────────────┐ │
 │     │ system_prompt = build_prompt(context, summary)          │ │
-│     │ response = await client.llm.chat(messages)              │ │
+│     │ response = await client.conversation_llm.chat(messages)  │ │
 │     └─────────────────────────────────────────────────────────┘ │
 │                                                                  │
 │  4. PERSIST TURN                                                 │
@@ -1734,7 +1742,7 @@ async def main():
             + messages
             + [{"role": "user", "content": user_msg}]
         )
-        ai_response = await client.llm.chat(messages=llm_messages)
+        ai_response = await client.conversation_llm.chat(messages=llm_messages)
         
         print(f"Assistant: {ai_response}")
         
@@ -2193,9 +2201,9 @@ This section provides visual representations of how data flows through the syste
 │  │        *memory_window,                                                │   │
 │  │        {"role": "user", "content": user_msg},                        │   │
 │  │    ]                                                                  │   │
-│  │    response = await client.llm.chat(messages=messages)               │   │
+│  │    response = await client.conversation_llm.chat(messages=messages)    │   │
 │  │         │                                                             │   │
-│  │         └── Groq API: generate response                              │   │
+│  │         └── LLM API: generate response                               │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 │     │                                                                        │
 │     ▼                                                                        │

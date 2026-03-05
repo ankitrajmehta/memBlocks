@@ -12,11 +12,12 @@ This document provides a complete API reference for the `memblocks` library with
 4. [Session](#session)
 5. [RetrievalResult](#retrievalresult)
 6. [LLM Providers](#llm-providers)
-7. [Logger](#logger)
-8. [CoreMemoryService (Internal)](#corememoryservice-internal)
-9. [SemanticMemoryService (Internal)](#semanticmemoryservice-internal)
-10. [Transparency Layer](#transparency-layer)
-11. [Data Models](#data-models)
+7. [LLMSettings and LLMTaskSettings](#llmsettings-and-llmtasksettings)
+8. [Logger](#logger)
+9. [CoreMemoryService (Internal)](#corememoryservice-internal)
+10. [SemanticMemoryService (Internal)](#semanticmemoryservice-internal)
+11. [Transparency Layer](#transparency-layer)
+12. [Data Models](#data-models)
 
 ---
 
@@ -46,7 +47,7 @@ async def main():
     
     # Build prompt and call YOUR LLM
     system = "You are helpful.\n\n" + context.to_prompt_string()
-    ai_response = await client.llm.chat([
+    ai_response = await client.conversation_llm.chat([
         {"role": "system", "content": system},
         *messages,
         {"role": "user", "content": user_msg},
@@ -86,12 +87,13 @@ client = MemBlocksClient(
 )
 ```
 
-The active LLM provider is resolved automatically from `config.llm_provider_name`:
+The active LLM provider is resolved automatically from `config.llm_provider_name` (or from `config.llm_settings` when using per-task configuration):
 
 | `llm_provider_name` | Provider class | Required key |
 |---------------------|---------------|--------------|
 | `"groq"` (default) | `GroqLLMProvider` | `GROQ_API_KEY` |
 | `"gemini"` | `GeminiLLMProvider` | `GEMINI_API_KEY` |
+| `"openrouter"` | `OpenRouterLLMProvider` | `OPENROUTER_API_KEY` |
 
 Any other value raises `ValueError`.
 
@@ -102,7 +104,8 @@ Any other value raises `ValueError`.
 | `mongo` | `MongoDBAdapter` | MongoDB operations |
 | `qdrant` | `QdrantAdapter` | Qdrant vector operations |
 | `embeddings` | `EmbeddingProvider` | Ollama embedding wrapper |
-| `llm` | `LLMProvider` | Active LLM backend (Groq or Gemini) |
+| `conversation_llm` | `LLMProvider` | Active LLM backend for conversation (primary attribute) |
+| `llm` | `LLMProvider` | Alias for `conversation_llm` (backward compatible) |
 | `event_bus` | `EventBus` | Pub/sub for internal events |
 | `operation_log` | `OperationLog` | Database write log |
 | `retrieval_log` | `RetrievalLog` | Memory retrieval log |
@@ -456,7 +459,7 @@ if not context.is_empty():
 
 ## LLM Providers
 
-memBlocks abstracts all LLM access behind the `LLMProvider` interface. Two built-in backends are provided; you can also implement your own.
+memBlocks abstracts all LLM access behind the `LLMProvider` interface. Three built-in backends are provided; you can also implement your own.
 
 ### LLMProvider Base Class
 
@@ -495,7 +498,7 @@ class LLMProvider:
         Send a list of {"role": ..., "content": ...} messages and return
         the assistant's response as a plain string.
 
-        Used by the caller for the main conversation turn (client.llm.chat(...)).
+        Used by the caller for the main conversation turn (client.conversation_llm.chat(...)).
         """
         ...
 ```
@@ -575,9 +578,37 @@ response = await provider.chat([{"role": "user", "content": "Hello!"}])
 | `gemini-1.5-pro` | Highest capability, 2M token context |
 | `gemini-1.5-flash` | Balanced speed/capability |
 
+### OpenRouterLLMProvider
+
+Backend using [`langchain-openai`](https://pypi.org/project/langchain-openai/) pointed at [OpenRouter](https://openrouter.ai/), giving access to hundreds of models from different vendors through a single API.
+
+```python
+from memblocks.llm.openrouter_provider import OpenRouterLLMProvider
+from memblocks import MemBlocksClient, MemBlocksConfig
+
+config = MemBlocksConfig(
+    llm_provider_name="openrouter",
+    openrouter_api_key="sk-or-xxxxxxxxx",
+    llm_model="meta-llama/llama-4-maverick-17b-128e-instruct",
+)
+
+# Automatically instantiated by MemBlocksClient
+client = MemBlocksClient(config)
+response = await client.conversation_llm.chat([{"role": "user", "content": "Hello!"}])
+```
+
+**Key config fields:**
+
+| Field | Description |
+|-------|-------------|
+| `openrouter_api_key` | Required. OpenRouter API key from [openrouter.ai/keys](https://openrouter.ai/keys). |
+| `llm_model` | Model identifier, e.g. `meta-llama/llama-4-maverick-17b-128e-instruct`. |
+| `openrouter_fallback_models` | Comma-separated list of fallback model IDs tried in order on failure. |
+| `openrouter_enable_thinking` | `true`/`false` — enable extended thinking (reasoning models only). |
+
 ### Optional Arize Monitoring
 
-Both `GroqLLMProvider` and `GeminiLLMProvider` support [Arize Phoenix](https://arize.com/) LangChain tracing. Set these fields in `MemBlocksConfig` (or the equivalent env vars) to enable it:
+All three providers (`GroqLLMProvider`, `GeminiLLMProvider`, `OpenRouterLLMProvider`) support [Arize Phoenix](https://arize.com/) LangChain tracing. Set these fields in `MemBlocksConfig` (or the equivalent env vars) to enable it:
 
 ```python
 config = MemBlocksConfig(
@@ -638,8 +669,93 @@ class MyOpenAIProvider(LLMProvider):
 # Inject after client construction
 config = MemBlocksConfig(llm_provider_name="groq", groq_api_key="placeholder")
 client = MemBlocksClient(config)
-client.llm = MyOpenAIProvider(api_key="sk-xxx")
+client.conversation_llm = MyOpenAIProvider(api_key="sk-xxx")
+# client.llm is an alias for client.conversation_llm — both work
 ```
+
+---
+
+## LLMSettings and LLMTaskSettings
+
+These Pydantic models (exported from `memblocks`) enable per-task LLM routing — assigning a different provider, model, or temperature to each internal task.
+
+### `LLMTaskSettings`
+
+```python
+from memblocks import LLMTaskSettings
+
+task = LLMTaskSettings(
+    provider="openrouter",          # "groq" | "gemini" | "openrouter"
+    model="anthropic/claude-opus-4",
+    temperature=0.7,
+    fallback_models=[               # OpenRouter only
+        "anthropic/claude-3-5-haiku",
+        "google/gemini-flash-1.5",
+    ],
+    enable_thinking=False,          # OpenRouter only
+)
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `provider` | `str` | *required* | Provider name: `"groq"`, `"gemini"`, or `"openrouter"` |
+| `model` | `str` | *required* | Model identifier |
+| `temperature` | `float` | `0.0` | Sampling temperature |
+| `fallback_models` | `List[str]` | `[]` | OpenRouter only — tried in order on primary model failure |
+| `enable_thinking` | `bool` | `False` | OpenRouter only — enables extended reasoning |
+
+### `LLMSettings`
+
+```python
+from memblocks import LLMSettings, LLMTaskSettings
+
+settings = LLMSettings(
+    # Required — used for any task without an explicit override
+    default=LLMTaskSettings(provider="groq", model="...", temperature=0.0),
+
+    # Optional per-task overrides
+    conversation=LLMTaskSettings(...),
+    ps1_semantic_extraction=LLMTaskSettings(...),
+    ps2_conflict_resolution=LLMTaskSettings(...),
+    retrieval=LLMTaskSettings(...),
+    core_memory_extraction=LLMTaskSettings(...),
+    recursive_summary=LLMTaskSettings(...),
+)
+```
+
+`LLMSettings.for_task(task_name)` returns the override for `task_name` if set, otherwise returns `default`.
+
+### Usage with `MemBlocksConfig`
+
+```python
+from memblocks import MemBlocksClient, MemBlocksConfig, LLMSettings, LLMTaskSettings
+
+config = MemBlocksConfig(
+    mongodb_connection_string="mongodb://localhost:27017",
+    qdrant_host="localhost",
+    ollama_base_url="http://localhost:11434",
+    llm_settings=LLMSettings(
+        default=LLMTaskSettings(
+            provider="groq",
+            model="meta-llama/llama-4-maverick-17b-128e-instruct",
+            temperature=0.0,
+        ),
+        conversation=LLMTaskSettings(
+            provider="openrouter",
+            model="anthropic/claude-opus-4",
+            temperature=0.7,
+        ),
+    ),
+    groq_api_key="gsk_xxx",
+    openrouter_api_key="sk-or-xxx",
+)
+
+client = MemBlocksClient(config)
+# client.conversation_llm → OpenRouterLLMProvider (claude-opus-4, temp=0.7)
+# Internal pipeline tasks → GroqLLMProvider (llama-4-maverick, temp=0.0)
+```
+
+When `llm_settings` is **not** set, the client auto-constructs equivalent settings from the flat legacy fields (`llm_provider_name`, `llm_model`, per-task temperature env vars). Existing code requires no changes.
 
 ---
 
@@ -1121,7 +1237,7 @@ async def main():
             + memory_window
             + [{"role": "user", "content": user_msg}]
         )
-        ai_response = await client.llm.chat(messages=messages)
+        ai_response = await client.conversation_llm.chat(messages=messages)
         
         print(f"User: {user_msg}")
         print(f"Assistant: {ai_response}\n")

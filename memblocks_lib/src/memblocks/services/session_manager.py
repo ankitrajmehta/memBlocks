@@ -33,7 +33,7 @@ class SessionManager:
     def __init__(
         self,
         mongo_adapter: "MongoDBAdapter",
-        llm_provider: "LLMProvider",
+        ps1_llm: "LLMProvider",
         qdrant_adapter: "QdrantAdapter",
         embedding_provider: "EmbeddingProvider",
         core_memory_service: "CoreMemoryService",
@@ -44,9 +44,15 @@ class SessionManager:
         event_bus: Optional[Any] = None,
         processing_history: Optional[Any] = None,
         retrieval_log: Optional[Any] = None,
+        ps2_llm: Optional["LLMProvider"] = None,
+        retrieval_llm: Optional["LLMProvider"] = None,
+        summary_llm: Optional["LLMProvider"] = None,
     ) -> None:
         self._mongo = mongo_adapter
-        self._llm = llm_provider
+        self._ps1_llm = ps1_llm
+        self._ps2_llm = ps2_llm or ps1_llm
+        self._retrieval_llm = retrieval_llm or ps1_llm
+        self._summary_llm = summary_llm or ps1_llm
         self._qdrant = qdrant_adapter
         self._embeddings = embedding_provider
         self._core = core_memory_service
@@ -128,7 +134,9 @@ class SessionManager:
         from memblocks.services.semantic_memory import SemanticMemoryService
 
         semantic_svc = SemanticMemoryService(
-            llm_provider=self._llm,
+            ps1_llm=self._ps1_llm,
+            ps2_llm=self._ps2_llm,
+            retrieval_llm=self._retrieval_llm,
             embedding_provider=self._embeddings,
             qdrant_adapter=self._qdrant,
             collection_name=semantic_collection,
@@ -140,7 +148,7 @@ class SessionManager:
         return MemoryPipeline(
             semantic_memory_service=semantic_svc,
             core_memory_service=self._core,
-            llm_provider=self._llm,
+            summary_llm=self._summary_llm,
             config=self._config,
             processing_history=self._history,
             operation_log=self._log,

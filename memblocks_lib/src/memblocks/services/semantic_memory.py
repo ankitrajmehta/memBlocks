@@ -61,31 +61,48 @@ class SemanticMemoryService:
 
     Enhancement: retrieve() now supports query expansion, hypothetical paragraph generation,
     and LLM-based re-ranking for improved semantic retrieval coverage and relevance.
+
+    Per-task LLM providers:
+    - ps1_llm:       Used for PS1 semantic memory extraction.
+    - ps2_llm:       Used for PS2 conflict resolution (ADD/UPDATE/DELETE).
+    - retrieval_llm: Used for query enhancement (HyDE + expansion) and re-ranking.
+    Each can be a different model/provider, configured via ``LLMSettings`` in
+    ``MemBlocksConfig``.
     """
 
     def __init__(
         self,
-        llm_provider: "LLMProvider",
+        ps1_llm: "LLMProvider",
         embedding_provider: "EmbeddingProvider",
         qdrant_adapter: "QdrantAdapter",
         collection_name: str,
         config: "MemBlocksConfig",
+        ps2_llm: Optional["LLMProvider"] = None,
+        retrieval_llm: Optional["LLMProvider"] = None,
         operation_log: Optional["OperationLog"] = None,
         retrieval_log: Optional["RetrievalLog"] = None,
         event_bus: Optional[Any] = None,
     ) -> None:
         """
         Args:
-            llm_provider: LLM abstraction for PS1/PS2 chains.
+            ps1_llm: LLM provider for PS1 semantic memory extraction.
             embedding_provider: Embeddings for vector operations.
             qdrant_adapter: Vector DB adapter.
             collection_name: Qdrant collection to operate on.
             config: Library configuration (temperatures etc.).
+            ps2_llm: LLM provider for PS2 conflict resolution. Defaults to
+                ``ps1_llm`` when not provided.
+            retrieval_llm: LLM provider for query enhancement and re-ranking.
+                Defaults to ``ps1_llm`` when not provided.
             operation_log: Phase-9 transparency placeholder.
             retrieval_log: Records every retrieval for observability.
             event_bus: Phase-9 event publishing placeholder.
         """
-        self._llm = llm_provider
+        self._ps1_llm = ps1_llm
+        self._ps2_llm = ps2_llm if ps2_llm is not None else ps1_llm
+        self._retrieval_llm = retrieval_llm if retrieval_llm is not None else ps1_llm
+        # Backward-compat alias — internal methods may still use self._llm
+        self._llm = ps1_llm
         self._embeddings = embedding_provider
         self._qdrant = qdrant_adapter
         self._collection = collection_name
@@ -127,7 +144,7 @@ class SemanticMemoryService:
         )
 
         try:
-            chain = self._llm.create_structured_chain(
+            chain = self._ps1_llm.create_structured_chain(
                 system_prompt=ps1_prompt,
                 pydantic_model=SemanticMemoriesOutput,
                 temperature=self._config.llm_semantic_extraction_temperature,
@@ -249,7 +266,7 @@ class SemanticMemoryService:
 
         # ---- PS2 conflict resolution ----
         try:
-            chain = self._llm.create_structured_chain(
+            chain = self._ps2_llm.create_structured_chain(
                 system_prompt=PS2_MEMORY_UPDATE_PROMPT,
                 pydantic_model=PS2MemoryUpdateOutput,
                 temperature=self._config.llm_memory_update_temperature,
@@ -558,7 +575,7 @@ class SemanticMemoryService:
                 num_expansions=num_expansions, num_paragraphs=num_paragraphs
             )
 
-            chain = self._llm.create_structured_chain(
+            chain = self._retrieval_llm.create_structured_chain(
                 system_prompt=prompt,
                 pydantic_model=QueryEnhancementOutput,
                 temperature=0.4,  # Balanced temperature for both tasks
@@ -748,7 +765,7 @@ class SemanticMemoryService:
                 for m in memories
             ]
 
-            chain = self._llm.create_structured_chain(
+            chain = self._retrieval_llm.create_structured_chain(
                 system_prompt=RERANKING_PROMPT,
                 pydantic_model=ReRankingOutput,
                 temperature=0.0,  # Deterministic for ranking
