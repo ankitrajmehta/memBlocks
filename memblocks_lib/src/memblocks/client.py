@@ -34,8 +34,7 @@ Typical usage:
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from memblocks.config import MemBlocksConfig
-from memblocks.llm.groq_provider import GroqLLMProvider
-from memblocks.llm.gemini_provider import GeminiLLMProvider
+from memblocks.llm.task_settings import LLMTaskSettings, LLMSettings
 from memblocks.storage.embeddings import EmbeddingProvider
 from memblocks.storage.mongo import MongoDBAdapter
 from memblocks.storage.qdrant import QdrantAdapter
@@ -56,6 +55,78 @@ if TYPE_CHECKING:
     from memblocks.services.session import Session
 
 
+def _build_provider(
+    task_settings: LLMTaskSettings,
+    config: MemBlocksConfig,
+) -> "LLMProvider":
+    """Build the correct ``LLMProvider`` for a single task's settings.
+
+    Args:
+        task_settings: Provider name, model, temperature, and optional
+            OpenRouter-specific fields for this task.
+        config: Full library config (used to extract API keys and Arize
+            monitoring fields).
+
+    Returns:
+        Configured ``LLMProvider`` instance.
+
+    Raises:
+        ValueError: If the provider name is unknown or the required API key
+            is missing.
+    """
+    provider_name = task_settings.provider
+
+    if provider_name == "groq":
+        from memblocks.llm.groq_provider import GroqLLMProvider
+
+        api_key = config.groq_api_key
+        if not api_key:
+            raise ValueError("GROQ_API_KEY not set — required for provider 'groq'")
+        return GroqLLMProvider.from_task_settings(
+            task_settings=task_settings,
+            api_key=api_key,
+            arize_space_id=config.arize_space_id,
+            arize_api_key=config.arize_api_key,
+            arize_project_name=config.arize_project_name,
+        )
+
+    elif provider_name == "gemini":
+        from memblocks.llm.gemini_provider import GeminiLLMProvider
+
+        api_key = config.gemini_api_key
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY not set — required for provider 'gemini'")
+        return GeminiLLMProvider.from_task_settings(
+            task_settings=task_settings,
+            api_key=api_key,
+            arize_space_id=config.arize_space_id,
+            arize_api_key=config.arize_api_key,
+            arize_project_name=config.arize_project_name,
+        )
+
+    elif provider_name == "openrouter":
+        from memblocks.llm.openrouter_provider import OpenRouterLLMProvider
+
+        api_key = config.openrouter_api_key
+        if not api_key:
+            raise ValueError(
+                "OPENROUTER_API_KEY not set — required for provider 'openrouter'"
+            )
+        return OpenRouterLLMProvider.from_task_settings(
+            task_settings=task_settings,
+            api_key=api_key,
+            arize_space_id=config.arize_space_id,
+            arize_api_key=config.arize_api_key,
+            arize_project_name=config.arize_project_name,
+        )
+
+    else:
+        raise ValueError(
+            f"Unknown LLM provider: '{provider_name}'. "
+            "Supported providers: 'groq', 'gemini', 'openrouter'."
+        )
+
+
 class MemBlocksClient:
     """
     Top-level client for the memBlocks library.
@@ -63,11 +134,20 @@ class MemBlocksClient:
     Wires all infrastructure adapters, transparency objects, and service
     classes together with constructor injection. No global state.
 
+    Per-task LLM providers are built from ``config.resolved_llm_settings``
+    (which is auto-constructed from the flat ``llm_provider_name`` / ``llm_model``
+    fields when ``config.llm_settings`` is ``None``).  Each task that requires
+    a different model/provider can be configured independently via
+    ``MemBlocksConfig(llm_settings=LLMSettings(...))``.
+
+    Exposed LLM providers (for advanced use):
+        conversation_llm:  Provider used for the main conversational chat turn.
+        llm:               Alias for ``conversation_llm`` (backward compatibility).
+
     Infrastructure (advanced / testing use):
         mongo:      MongoDBAdapter
         qdrant:     QdrantAdapter
         embeddings: EmbeddingProvider
-        llm:        LLMProvider
 
     Transparency:
         event_bus:          EventBus
@@ -87,13 +167,15 @@ class MemBlocksClient:
         """
         Initialise the client, wiring all dependencies.
 
+        Per-task LLM providers are resolved from ``config.resolved_llm_settings``.
+        When ``config.llm_settings`` is ``None``, the settings are auto-built
+        from the legacy flat fields so existing code requires no changes.
+
         Args:
             config: Library configuration (MemBlocksConfig instance).
             mongo_adapter: Optional pre-built MongoDBAdapter (for testing).
             embedding_provider: Optional pre-built EmbeddingProvider.
             qdrant_adapter: Optional pre-built QdrantAdapter.
-            llm_provider: Optional LLMProvider for memory management.
-                Defaults to GroqLLMProvider(config).
         """
         self.config = config
 
@@ -106,17 +188,34 @@ class MemBlocksClient:
             config, self.embeddings
         )
 
-        if self.config.llm_provider_name == "groq":
-            llm_provider = GroqLLMProvider(config)
-        elif self.config.llm_provider_name == "gemini":
-            llm_provider = GeminiLLMProvider(config)
-        else:
-            raise ValueError(
-                f"Unknown LLM provider: {self.config.llm_provider_name}. "
-                "Supported providers: 'groq', 'gemini'"
-            )
+        # ---- Resolve per-task LLM settings ----
+        llm_settings: LLMSettings = config.resolved_llm_settings
 
-        self.llm: "LLMProvider" = llm_provider
+        # Build one provider per task.  Providers that share identical settings
+        # (same provider + model + temperature + openrouter extras) will
+        # receive distinct instances — this is safe because all providers are
+        # stateless beyond their configuration.
+        self.conversation_llm: "LLMProvider" = _build_provider(
+            llm_settings.for_task("conversation"), config
+        )
+        # Backward-compatible alias
+        self.llm: "LLMProvider" = self.conversation_llm
+
+        _ps1_llm: "LLMProvider" = _build_provider(
+            llm_settings.for_task("ps1_semantic_extraction"), config
+        )
+        _ps2_llm: "LLMProvider" = _build_provider(
+            llm_settings.for_task("ps2_conflict_resolution"), config
+        )
+        _retrieval_llm: "LLMProvider" = _build_provider(
+            llm_settings.for_task("retrieval"), config
+        )
+        _core_llm: "LLMProvider" = _build_provider(
+            llm_settings.for_task("core_memory_extraction"), config
+        )
+        _summary_llm: "LLMProvider" = _build_provider(
+            llm_settings.for_task("recursive_summary"), config
+        )
 
         # ---- Transparency layer ----
         self.event_bus: EventBus = EventBus()
@@ -128,7 +227,7 @@ class MemBlocksClient:
         self._users: UserManager = UserManager(self.mongo)
 
         self._core: CoreMemoryService = CoreMemoryService(
-            llm_provider=self.llm,
+            core_llm=_core_llm,
             mongo_adapter=self.mongo,
             config=self.config,
             operation_log=self.operation_log,
@@ -139,7 +238,9 @@ class MemBlocksClient:
             mongo_adapter=self.mongo,
             qdrant_adapter=self.qdrant,
             embedding_provider=self.embeddings,
-            llm_provider=self.llm,
+            ps1_llm=_ps1_llm,
+            ps2_llm=_ps2_llm,
+            retrieval_llm=_retrieval_llm,
             core_memory_service=self._core,
             config=self.config,
             operation_log=self.operation_log,
@@ -149,7 +250,10 @@ class MemBlocksClient:
 
         self._sessions: SessionManager = SessionManager(
             mongo_adapter=self.mongo,
-            llm_provider=self.llm,
+            ps1_llm=_ps1_llm,
+            ps2_llm=_ps2_llm,
+            retrieval_llm=_retrieval_llm,
+            summary_llm=_summary_llm,
             qdrant_adapter=self.qdrant,
             embedding_provider=self.embeddings,
             core_memory_service=self._core,

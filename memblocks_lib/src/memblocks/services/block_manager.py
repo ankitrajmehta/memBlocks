@@ -35,31 +35,37 @@ class BlockManager:
         mongo_adapter: "MongoDBAdapter",
         qdrant_adapter: "QdrantAdapter",
         embedding_provider: "EmbeddingProvider",
-        llm_provider: "LLMProvider",
+        ps1_llm: "LLMProvider",
         core_memory_service: "CoreMemoryService",
         config: "MemBlocksConfig",
         operation_log: Optional["OperationLog"] = None,
         retrieval_top_k: int = 5,
         event_bus: Optional[Any] = None,
         retrieval_log: Optional[Any] = None,
+        ps2_llm: Optional["LLMProvider"] = None,
+        retrieval_llm: Optional["LLMProvider"] = None,
     ) -> None:
         """
         Args:
             mongo_adapter: MongoDB persistence layer.
             qdrant_adapter: Qdrant vector DB layer.
             embedding_provider: Used to create Qdrant collections with correct dim.
-            llm_provider: LLM for semantic memory extraction/update.
+            ps1_llm: LLM for semantic memory extraction (PS1).
             core_memory_service: Shared core memory service.
             config: Library config (temperatures, collection templates etc.).
             operation_log: Transparency log.
             retrieval_top_k: Default top-k for vector search.
             event_bus: Transparency event bus.
             retrieval_log: Transparency retrieval log.
+            ps2_llm: LLM for conflict resolution (PS2); defaults to ps1_llm.
+            retrieval_llm: LLM for retrieval/reranking; defaults to ps1_llm.
         """
         self._mongo = mongo_adapter
         self._qdrant = qdrant_adapter
         self._embeddings = embedding_provider
-        self._llm = llm_provider
+        self._ps1_llm = ps1_llm
+        self._ps2_llm = ps2_llm or ps1_llm
+        self._retrieval_llm = retrieval_llm or ps1_llm
         self._core = core_memory_service
         self._config = config
         self._log = operation_log
@@ -207,7 +213,9 @@ class BlockManager:
         from memblocks.services.semantic_memory import SemanticMemoryService
 
         return SemanticMemoryService(
-            llm_provider=self._llm,
+            ps1_llm=self._ps1_llm,
+            ps2_llm=self._ps2_llm,
+            retrieval_llm=self._retrieval_llm,
             embedding_provider=self._embeddings,
             qdrant_adapter=self._qdrant,
             collection_name=collection_name,

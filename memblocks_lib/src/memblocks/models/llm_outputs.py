@@ -118,6 +118,36 @@ class PS2MemoryUpdateOutput(BaseModel):
     )
 
 
+class QueryExpansionOutput(BaseModel):
+    """Output model for query expansion."""
+
+    expanded_queries: List[str] = Field(
+        description="List of expanded queries with additional related terms for better retrieval coverage"
+    )
+
+
+class HypotheticalParagraphsOutput(BaseModel):
+    """Output model for hypothetical paragraph generation."""
+
+    paragraphs: List[str] = Field(
+        description="List of hypothetical answer paragraphs that could respond to the query"
+    )
+
+
+class QueryEnhancementOutput(BaseModel):
+    """Combined output model for query expansion and hypothetical paragraph generation.
+    
+    This model combines both operations into a single LLM call to reduce latency.
+    """
+
+    expanded_queries: List[str] = Field(
+        description="List of expanded queries with additional related terms for better retrieval coverage"
+    )
+    hypothetical_paragraphs: List[str] = Field(
+        description="List of hypothetical answer paragraphs that could respond to the query"
+    )
+
+
 __all__ = [
     "SemanticExtractionOutput",
     "SemanticMemoriesOutput",
@@ -127,4 +157,7 @@ __all__ = [
     "PS2NewMemoryOperation",
     "PS2ExistingMemoryOperation",
     "PS2MemoryUpdateOutput",
+    "QueryExpansionOutput",
+    "HypotheticalParagraphsOutput",
+    "QueryEnhancementOutput",
 ]

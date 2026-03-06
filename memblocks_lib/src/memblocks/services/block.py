@@ -120,7 +120,7 @@ class Block:
         Returns:
             RetrievalResult with only the semantic field populated.
         """
-        semantic = self._fetch_semantic(query)
+        semantic = await self._fetch_semantic(query)
         return RetrievalResult(core=None, semantic=semantic, resource=[])
 
     async def resource_retrieve(self, query: str) -> RetrievalResult:
@@ -151,16 +151,17 @@ class Block:
         core_task = asyncio.create_task(
             self._core.get(self.core_memory_block_id or self.id)
         )
-        # Semantic retrieval is sync internally (uses ThreadPoolExecutor)
-        semantic = self._fetch_semantic(query)
+        # Semantic retrieval is now async
+        semantic_task = asyncio.create_task(self._fetch_semantic(query))
         core = await core_task
+        semantic = await semantic_task
         return core, semantic
 
-    def _fetch_semantic(self, query: str) -> List[SemanticMemoryUnit]:
+    async def _fetch_semantic(self, query: str) -> List[SemanticMemoryUnit]:
         """Run semantic vector search and return flat list of memories."""
         if not self.semantic_collection:
             return []
-        results = self._semantic.retrieve([query], top_k=self._top_k)
+        results = await self._semantic.retrieve([query], top_k=self._top_k)
         return results[0] if results else []
 
     # ------------------------------------------------------------------ #

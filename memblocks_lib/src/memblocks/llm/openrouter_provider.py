@@ -1,8 +1,8 @@
-"""GeminiLLMProvider — LLMProvider implementation using LangChain + Google Gemini."""
+"""OpenRouterLLMProvider — LLMProvider implementation using LangChain + OpenRouter."""
 
 from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel
 
@@ -15,46 +15,65 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-class GeminiLLMProvider(LLMProvider):
+
+class OpenRouterLLMProvider(LLMProvider):
     """
-    ``LLMProvider`` implementation using ``langchain_google_genai.ChatGoogleGenerativeAI``.
+    ``LLMProvider`` implementation using ``langchain_openai.ChatOpenAI``
+    configured for OpenRouter's API.
 
-    Mirrors the structure of ``GroqLLMProvider`` but uses Google's Gemini API instead.
-    Designed to work seamlessly with the existing memBlocks architecture.
+    Supports OpenRouter's model fallback feature: provide an ordered list of
+    fallback model IDs via ``config.openrouter_fallback_models``. If the
+    primary model (``config.llm_model``) fails due to downtime, rate-limiting,
+    or content moderation, OpenRouter will automatically try each fallback in
+    order before returning an error.
+
+    The ``models`` array is sent in the request body via ``model_kwargs``,
+    as required by OpenRouter's API when using an OpenAI-compatible client.
 
     Can be instantiated either from a full ``MemBlocksConfig`` (legacy path)
     or from a bare ``LLMTaskSettings`` + ``api_key`` (per-task path used by
     ``MemBlocksClient`` when ``llm_settings`` is configured).
-
-    Note: ``fallback_models`` and ``enable_thinking`` in ``LLMTaskSettings``
-    are OpenRouter-specific and are silently ignored by this provider.
     """
 
     def __init__(self, config: "MemBlocksConfig") -> None:
         """
         Construct from a full ``MemBlocksConfig``.
 
-        Prefer ``GeminiLLMProvider.from_task_settings()`` when building a
+        Prefer ``OpenRouterLLMProvider.from_task_settings()`` when building a
         per-task provider inside ``MemBlocksClient``.
 
         Args:
-            config: Library configuration.  Reads ``gemini_api_key``,
-                    ``llm_model``, ``llm_convo_temperature``, and optional
-                    Arize monitoring fields.
+            config: Library configuration. Reads:
+                - ``openrouter_api_key``        — required
+                - ``llm_model``                 — primary model
+                - ``llm_convo_temperature``
+                - ``openrouter_fallback_models`` — ordered fallback model IDs
+                - ``openrouter_enable_thinking`` — enable reasoning/thinking
 
         Raises:
-            ValueError: If ``config.gemini_api_key`` is not set.
+            ValueError: If ``config.openrouter_api_key`` is not set.
         """
-        api_key = config.gemini_api_key
+        api_key = config.openrouter_api_key
         if not api_key:
             raise ValueError(
-                "GEMINI_API_KEY not found — set it in .env or pass to MemBlocksConfig"
+                "OPENROUTER_API_KEY not found — set it in .env or pass to MemBlocksConfig"
             )
 
         self._api_key: str = api_key
         self._model: str = config.llm_model
         self._default_temperature: float = config.llm_convo_temperature
+        self._fallback_models: List[str] = config.openrouter_fallback_models_list
+        self._enable_thinking: bool = config.openrouter_enable_thinking
+
+        if self._fallback_models:
+            logger.debug(
+                "OpenRouter fallback models configured: %s",
+                self._fallback_models,
+            )
+        if self._enable_thinking:
+            logger.debug("OpenRouter thinking/reasoning enabled")
 
         # Arize instrumentation — conditional, inside constructor, not at module level.
         if config.arize_space_id and config.arize_api_key:
@@ -87,27 +106,37 @@ class GeminiLLMProvider(LLMProvider):
         arize_space_id: Optional[str] = None,
         arize_api_key: Optional[str] = None,
         arize_project_name: str = "memBlocks",
-    ) -> "GeminiLLMProvider":
+    ) -> "OpenRouterLLMProvider":
         """Construct a provider directly from ``LLMTaskSettings``.
 
         This is the preferred path when ``MemBlocksClient`` builds per-task
         providers from ``config.resolved_llm_settings``.
 
         Args:
-            task_settings: Task-specific LLM settings (model, temperature).
-                ``fallback_models`` and ``enable_thinking`` are silently ignored.
-            api_key: Google Gemini API key.
+            task_settings: Task-specific LLM settings (provider, model,
+                temperature, fallback_models, enable_thinking).
+            api_key: OpenRouter API key.
             arize_space_id: Optional Arize monitoring space ID.
             arize_api_key: Optional Arize monitoring API key.
             arize_project_name: Arize project name.
 
         Returns:
-            Configured ``GeminiLLMProvider`` instance.
+            Configured ``OpenRouterLLMProvider`` instance.
         """
         instance = cls.__new__(cls)
         instance._api_key = api_key
         instance._model = task_settings.model
         instance._default_temperature = task_settings.temperature
+        instance._fallback_models = task_settings.fallback_models
+        instance._enable_thinking = task_settings.enable_thinking
+
+        if instance._fallback_models:
+            logger.debug(
+                "OpenRouter fallback models configured: %s",
+                instance._fallback_models,
+            )
+        if instance._enable_thinking:
+            logger.debug("OpenRouter thinking/reasoning enabled")
 
         if arize_space_id and arize_api_key:
             try:
@@ -133,6 +162,33 @@ class GeminiLLMProvider(LLMProvider):
 
         return instance
 
+    def _get_model_kwargs(self) -> Dict[str, Any]:
+        """
+        Build extra request-body kwargs for OpenRouter.
+
+        Includes:
+        - ``models``: ordered fallback model list (if configured)
+        - ``reasoning``: enables extended thinking (if configured)
+
+        Both are sent as extra body fields via ``model_kwargs``.
+        """
+        kwargs: Dict[str, Any] = {}
+        return kwargs
+
+    def _build_llm(self, temperature: float) -> ChatOpenAI:
+        """Instantiate a ``ChatOpenAI`` client pointed at OpenRouter."""
+        return ChatOpenAI(
+            model=self._model,
+            temperature=temperature,
+            api_key=self._api_key,
+            base_url=OPENROUTER_BASE_URL,
+            reasoning={"enabled": self._enable_thinking},
+            extra_body={"models": self._fallback_models}
+            if self._fallback_models
+            else None,
+            model_kwargs=self._get_model_kwargs(),
+        )
+
     # ------------------------------------------------------------------
     # LLMProvider implementation
     # ------------------------------------------------------------------
@@ -144,9 +200,10 @@ class GeminiLLMProvider(LLMProvider):
         temperature: float = 0.0,
     ) -> Any:
         """
-        Create a LangChain structured-output chain using Gemini's structured output mode.
+        Create a LangChain structured-output chain using OpenRouter.
 
-        Follows the same pattern as ``GroqLLMProvider.create_structured_chain()``.
+        If ``openrouter_fallback_models`` is set, the ``models`` fallback array
+        is included in every request so OpenRouter can automatically failover.
 
         Args:
             system_prompt: System-level prompt string.
@@ -157,16 +214,11 @@ class GeminiLLMProvider(LLMProvider):
             LangChain ``Runnable`` accepting ``{"input": str}`` and returning
             a ``pydantic_model`` instance.
         """
-        llm = ChatGoogleGenerativeAI(
-            model=self._model,
-            temperature=temperature,
-            google_api_key=self._api_key,
-        )
+        llm = self._build_llm(temperature)
 
-        # Use Gemini's structured output mode.
-        # include_raw=False → only the parsed Pydantic object is returned.
         structured_llm = llm.with_structured_output(
             pydantic_model,
+            method="json_mode",
             include_raw=False,
         )
 
@@ -187,37 +239,20 @@ class GeminiLLMProvider(LLMProvider):
         """
         Send a conversation and return the assistant's response text.
 
-        Mirrors ``GroqLLMProvider.chat()`` but uses Gemini API.
+        If ``openrouter_fallback_models`` is set, OpenRouter will try each
+        fallback model in order if the primary model is unavailable.
 
         Args:
             messages: Conversation history as ``[{"role": ..., "content": ...}, ...]``.
-            temperature: Override temperature.  Defaults to
+            temperature: Override temperature. Defaults to
                          ``config.llm_convo_temperature`` set in ``__init__``.
 
         Returns:
-            Assistant response text (extracted from response.content).
+            Assistant response text.
         """
         effective_temp = (
             temperature if temperature is not None else self._default_temperature
         )
-        llm = ChatGoogleGenerativeAI(
-            model=self._model,
-            temperature=effective_temp,
-            google_api_key=self._api_key,
-        )
+        llm = self._build_llm(effective_temp)
         response = await llm.ainvoke(messages)
-
-        # Handle Gemini's structured response format
-        content = response.content
-        if isinstance(content, list):
-            # Extract text from list of content parts
-            text_parts = []
-            for part in content:
-                if isinstance(part, dict) and "text" in part:
-                    text_parts.append(part["text"])
-                elif hasattr(part, "text"):
-                    text_parts.append(part.text)
-            return "".join(text_parts)
-
-        # Fallback to string content
-        return str(content)
+        return response.content

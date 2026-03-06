@@ -28,3 +28,13 @@ operation_log.json
 operation_summary.json
 retrieval_log.json
 processing_history.json
+check_retrieval.bat
+memblocks_lib\docs
+memblocks_lib\docs\RETRIEVAL_DATA_FLOW_VALIDATION.md
+memblocks_lib\docs\SEMANTIC_RETRIEVAL_ENHANCEMENT.md
+memblocks_lib\docs\TESTING_GUIDE.md
+memblocks_lib\docs
+memblocks_lib\docs\RETRIEVAL_DATA_FLOW_VALIDATION.md
+memblocks_lib\docs\SEMANTIC_RETRIEVAL_ENHANCEMENT.md
+memblocks_lib\docs\TESTING_GUIDE.md
+verify_retrieval.py

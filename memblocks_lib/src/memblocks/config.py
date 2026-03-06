@@ -10,11 +10,34 @@ module-level singleton), this class:
 - defaults env_file to ".env" (cwd-relative, works in any project)
 - adds new fields required by the library (database_name, memory_window, etc.)
 - is instantiated by the caller, never at import time
+
+Per-task LLM configuration:
+    Pass an ``LLMSettings`` instance to ``llm_settings`` to assign a different
+    provider, model, and temperature to each task (PS1 extraction, PS2 conflict
+    resolution, retrieval, core memory, summary, conversation).  When
+    ``llm_settings`` is ``None`` the client auto-constructs it from the flat
+    legacy fields below so existing code continues to work unchanged.
+
+    from memblocks.llm.task_settings import LLMSettings, LLMTaskSettings
+
+    config = MemBlocksConfig(
+        openrouter_api_key="...",
+        llm_settings=LLMSettings(
+            default=LLMTaskSettings(provider="openrouter",
+                                    model="meta-llama/llama-4-maverick-17b-128e-instruct",
+                                    temperature=0.0),
+            retrieval=LLMTaskSettings(provider="groq",
+                                      model="llama-3.1-8b-instant",
+                                      temperature=0.4),
+        ),
+    )
 """
 
-from typing import Optional
+from typing import List, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from memblocks.llm.task_settings import LLMSettings, LLMTaskSettings
 
 
 class MemBlocksConfig(BaseSettings):
@@ -40,6 +63,33 @@ class MemBlocksConfig(BaseSettings):
     # Google Gemini API
     gemini_api_key: Optional[str] = Field(None, validation_alias="GEMINI_API_KEY")
 
+    # OpenRouter API
+    openrouter_api_key: Optional[str] = Field(
+        None, validation_alias="OPENROUTER_API_KEY"
+    )
+    openrouter_fallback_models: Optional[str] = Field(
+        None,
+        validation_alias="OPENROUTER_FALLBACK_MODELS",
+        description=(
+            "Comma-separated fallback model IDs tried in order if the primary model fails. "
+            "Example: anthropic/claude-3.5-sonnet,gryphe/mythomax-l2-13b"
+        ),
+    )
+    openrouter_enable_thinking: bool = Field(
+        False,
+        validation_alias="OPENROUTER_ENABLE_THINKING",
+        description="Enable extended thinking/reasoning for supported OpenRouter models.",
+    )
+
+    @property
+    def openrouter_fallback_models_list(self) -> List[str]:
+        """Parse the comma-separated fallback models string into a list."""
+        if not self.openrouter_fallback_models:
+            return []
+        return [
+            m.strip() for m in self.openrouter_fallback_models.split(",") if m.strip()
+        ]
+
     llm_model: str = Field(
         "meta-llama/llama-4-maverick-17b-128e-instruct",
         validation_alias="LLM_MODEL",
@@ -57,6 +107,55 @@ class MemBlocksConfig(BaseSettings):
     llm_memory_update_temperature: float = Field(
         0.0, validation_alias="LLM_MEMORY_UPDATE_TEMPERATURE"
     )
+
+    # -------------------------------------------------------------------------
+    # Per-task LLM Settings (optional — overrides the flat fields above)
+    # -------------------------------------------------------------------------
+    llm_settings: Optional[LLMSettings] = Field(
+        None,
+        description=(
+            "Per-task LLM configuration. When set, each task can use a "
+            "different provider, model, and temperature. When None, the "
+            "client auto-constructs LLMSettings from the flat fields above "
+            "(llm_provider_name, llm_model, llm_*_temperature) so existing "
+            "code continues to work unchanged."
+        ),
+    )
+
+    @property
+    def resolved_llm_settings(self) -> LLMSettings:
+        """Return the effective ``LLMSettings``, constructing from flat fields if needed.
+
+        When ``llm_settings`` is explicitly provided it is returned as-is.
+        Otherwise a single ``LLMTaskSettings`` is built from the flat legacy
+        fields and used as the ``default`` for all tasks, with per-task
+        temperature overrides applied individually.
+
+        This property is the single place ``MemBlocksClient`` reads from —
+        services never touch the flat temperature fields directly.
+        """
+        if self.llm_settings is not None:
+            return self.llm_settings
+
+        # Build per-task settings from flat legacy fields
+        def _make(temperature: float) -> LLMTaskSettings:
+            return LLMTaskSettings(
+                provider=self.llm_provider_name,
+                model=self.llm_model,
+                temperature=temperature,
+                fallback_models=self.openrouter_fallback_models_list,
+                enable_thinking=self.openrouter_enable_thinking,
+            )
+
+        return LLMSettings(
+            default=_make(self.llm_convo_temperature),
+            conversation=_make(self.llm_convo_temperature),
+            ps1_semantic_extraction=_make(self.llm_semantic_extraction_temperature),
+            ps2_conflict_resolution=_make(self.llm_memory_update_temperature),
+            retrieval=_make(0.4),  # hardcoded default for query enhancement
+            core_memory_extraction=_make(self.llm_core_extraction_temperature),
+            recursive_summary=_make(self.llm_recursive_summary_gen_temperature),
+        )
 
     # -------------------------------------------------------------------------
     # MongoDB
@@ -102,6 +201,11 @@ class MemBlocksConfig(BaseSettings):
     embeddings_model: str = Field(
         "nomic-embed-text", validation_alias="EMBEDDINGS_MODEL"
     )
+    sparse_embeddings_model: str = Field(
+        "prithivida/Splade_PP_en_v1",
+        validation_alias="SPARSE_EMBEDDINGS_MODEL",
+        description="SPLADE model used by fastembed for sparse vector generation.",
+    )
 
     # -------------------------------------------------------------------------
     # Memory pipeline behaviour
@@ -115,6 +219,53 @@ class MemBlocksConfig(BaseSettings):
         4,
         validation_alias="KEEP_LAST_N",
         description="Messages kept in active context after the window is processed.",
+    )
+
+    # -------------------------------------------------------------------------
+    # Retrieval Configuration
+    # -------------------------------------------------------------------------
+    retrieval_num_query_expansions: int = Field(
+        3,
+        validation_alias="RETRIEVAL_NUM_QUERY_EXPANSIONS",
+        description="Number of expanded queries to generate for each original query.",
+    )
+    retrieval_num_hypothetical_paragraphs: int = Field(
+        2,
+        validation_alias="RETRIEVAL_NUM_HYPOTHETICAL_PARAGRAPHS",
+        description="Number of hypothetical answer paragraphs to generate for each query.",
+    )
+    retrieval_top_k_per_query: int = Field(
+        5,
+        validation_alias="RETRIEVAL_TOP_K_PER_QUERY",
+        description="Number of top results to retrieve per expanded query.",
+    )
+    retrieval_final_top_k: int = Field(
+        10,
+        validation_alias="RETRIEVAL_FINAL_TOP_K",
+        description="Final number of results to return after re-ranking.",
+    )
+    retrieval_enable_query_expansion: bool = Field(
+        True,
+        validation_alias="RETRIEVAL_ENABLE_QUERY_EXPANSION",
+        description="Enable query expansion with related terms.",
+    )
+    retrieval_enable_hypothetical_paragraphs: bool = Field(
+        True,
+        validation_alias="RETRIEVAL_ENABLE_HYPOTHETICAL_PARAGRAPHS",
+        description="Enable hypothetical paragraph generation for retrieval.",
+    )
+    retrieval_enable_reranking: bool = Field(
+        True,
+        validation_alias="RETRIEVAL_ENABLE_RERANKING",
+        description="Enable LLM-based re-ranking of retrieved results.",
+    )
+    retrieval_enable_sparse: bool = Field(
+        True,
+        validation_alias="RETRIEVAL_ENABLE_SPARSE",
+        description=(
+            "Enable SPLADE sparse vector hybrid search (dense + sparse via Qdrant RRF). "
+            "When False, falls back to pure dense vector search."
+        ),
     )
 
     # -------------------------------------------------------------------------

@@ -99,7 +99,7 @@ async def send_message(
         + memory_window
         + [{"role": "user", "content": body.message}]
     )
-    ai_response = await client.llm.chat(messages=messages_for_llm)
+    ai_response = await client.conversation_llm.chat(messages=messages_for_llm)
 
     # --- Persist turn ---
     await session.add(user_msg=body.message, ai_response=ai_response)
