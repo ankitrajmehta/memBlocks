@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from backend.src.api.dependencies import get_client
 from backend.src.api.models.requests import CreateBlockRequest
+from backend.src.api.routers.auth import CurrentUser, get_current_user
 from memblocks import MemBlocksClient
 
 router = APIRouter(prefix="/blocks", tags=["blocks"])
@@ -14,11 +15,12 @@ router = APIRouter(prefix="/blocks", tags=["blocks"])
 @router.post("/", response_model=Dict[str, Any])
 async def create_block(
     body: CreateBlockRequest,
+    current_user: CurrentUser = Depends(get_current_user),
     client: MemBlocksClient = Depends(get_client),
 ) -> Dict[str, Any]:
-    """Create a new memory block for a user."""
+    """Create a new memory block for the authenticated user."""
     block = await client.create_block(
-        user_id=body.user_id,
+        user_id=current_user.user_id,
         name=body.name,
         description=body.description,
         create_semantic=body.create_semantic,
@@ -41,9 +43,15 @@ async def create_block(
 @router.get("/user/{user_id}", response_model=List[Dict[str, Any]])
 async def get_user_blocks(
     user_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
     client: MemBlocksClient = Depends(get_client),
 ) -> List[Dict[str, Any]]:
-    """List all memory blocks belonging to a user."""
+    """List all memory blocks belonging to the authenticated user."""
+    if user_id != current_user.user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot access another user's blocks",
+        )
     blocks = await client.get_user_blocks(user_id)
     return [
         {
@@ -64,12 +72,18 @@ async def get_user_blocks(
 @router.get("/{block_id}", response_model=Dict[str, Any])
 async def get_block(
     block_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
     client: MemBlocksClient = Depends(get_client),
 ) -> Dict[str, Any]:
     """Get a specific memory block by ID."""
     block = await client.get_block(block_id)
     if not block:
         raise HTTPException(status_code=404, detail=f"Block '{block_id}' not found")
+    if block.user_id != current_user.user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot access another user's block",
+        )
     return {
         "block_id": block.id,
         "name": block.name,
@@ -86,11 +100,22 @@ async def get_block(
 @router.delete("/{block_id}")
 async def delete_block(
     block_id: str,
-    user_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
     client: MemBlocksClient = Depends(get_client),
 ) -> Dict[str, Any]:
     """Delete a memory block."""
-    success = await client.delete_block(block_id=block_id, user_id=user_id)
+    block = await client.get_block(block_id)
+    if not block:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Block '{block_id}' not found",
+        )
+    if block.user_id != current_user.user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot delete another user's block",
+        )
+    success = await client.delete_block(block_id=block_id, user_id=current_user.user_id)
     if not success:
         raise HTTPException(
             status_code=404,

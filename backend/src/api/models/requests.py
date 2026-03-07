@@ -9,7 +9,6 @@ class CreateUserRequest(BaseModel):
 
 
 class CreateBlockRequest(BaseModel):
-    user_id: str = Field(..., description="Owner user ID")
     name: str = Field(..., description="Human-readable block name")
     description: str = Field("", description="Optional block description")
     create_semantic: bool = Field(True, description="Create semantic Qdrant collection")
@@ -20,7 +19,6 @@ class CreateBlockRequest(BaseModel):
 
 
 class CreateSessionRequest(BaseModel):
-    user_id: str = Field(..., description="Owner user ID")
     block_id: str = Field(..., description="Memory block to attach to this session")
 
 

@@ -4,8 +4,10 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import APIRouter
 
-from backend.src.api.routers import blocks, chat, memory, users
+from backend.src.api.routers import auth, blocks, chat, memory, transparency, users
 from backend.src.api.dependencies import get_client
 
 
@@ -29,10 +31,23 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.include_router(users.router)
-    app.include_router(blocks.router)
-    app.include_router(chat.router)
-    app.include_router(memory.router)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    api_router = APIRouter(prefix="/api")
+    api_router.include_router(auth.router)
+    api_router.include_router(users.router)
+    api_router.include_router(blocks.router)
+    api_router.include_router(chat.router)
+    api_router.include_router(memory.router)
+    api_router.include_router(transparency.router)
+    
+    app.include_router(api_router)
 
     @app.get("/health")
     async def health() -> dict:
