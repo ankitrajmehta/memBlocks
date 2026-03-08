@@ -77,10 +77,14 @@ class RetrievalResult(BaseModel):
         if self.semantic:
             sem_lines = []
             for mem in self.semantic:
-                kw = ", ".join(mem.keywords[:5]) if mem.keywords else ""
+                # kw = ", ".join(mem.keywords[:5]) if mem.keywords else ""
                 entry = f"[{mem.type.upper()}] {mem.content}"
-                if kw:
-                    entry += f"\n  Keywords: {kw}"
+                # if kw:
+                #     entry += f"\n  Keywords: {kw}"
+                if mem.updated_at:
+                    entry += f"\n Memory Updated at: {mem.updated_at}"
+                if mem.memory_time:
+                    entry += f"\n | Event occurance time: {mem.memory_time} \n"
                 sem_lines.append(entry)
             parts.append(
                 "<Semantic Memories>\n"
