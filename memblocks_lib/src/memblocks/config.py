@@ -67,6 +67,12 @@ class MemBlocksConfig(BaseSettings):
     openrouter_api_key: Optional[str] = Field(
         None, validation_alias="OPENROUTER_API_KEY"
     )
+
+    # Cohere re-ranker API
+    cohere_api_key: Optional[str] = Field(
+        None, validation_alias="COHERE_API_KEY",
+        description="API key for the Cohere re-ranker service."
+    )
     openrouter_fallback_models: Optional[str] = Field(
         None,
         validation_alias="OPENROUTER_FALLBACK_MODELS",

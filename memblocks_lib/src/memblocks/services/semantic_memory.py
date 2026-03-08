@@ -84,8 +84,7 @@ class SemanticMemoryService:
         retrieval_llm: Optional["LLMProvider"] = None,
         operation_log: Optional["OperationLog"] = None,
         retrieval_log: Optional["RetrievalLog"] = None,
-        event_bus: Optional[Any] = None,
-        cohere_api_key: Optional[str] = None,
+        event_bus: Optional[Any] = None
     ) -> None:
         """
         Args:
@@ -100,9 +99,7 @@ class SemanticMemoryService:
                 Defaults to ``ps1_llm`` when not provided.
             operation_log: Phase-9 transparency placeholder.
             retrieval_log: Records every retrieval for observability.
-            event_bus: Phase-9 event publishing placeholder.
-            cohere_api_key: Cohere API key for re-ranking. If None, reads from
-                COHERE_API_KEY environment variable.
+            event_bus: Phase-9 event publishing placeholder
         """
         self._ps1_llm = ps1_llm
         self._ps2_llm = ps2_llm if ps2_llm is not None else ps1_llm
@@ -119,7 +116,6 @@ class SemanticMemoryService:
         
         # Initialize Cohere re-ranker (lazy initialization on first use)
         self._reranker: Optional[CohereReranker] = None
-        self._cohere_api_key = cohere_api_key
 
     # ------------------------------------------------------------------ #
     # PS1 Extraction
@@ -464,96 +460,6 @@ class SemanticMemoryService:
     # Enhanced Retrieval with Query Expansion, Hypothetical Paragraphs, and Re-ranking
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _extract_query_terms(query: str) -> Tuple[List[str], List[str]]:
-        """
-        Lightweight extraction of keywords and entity candidates from a raw
-        query string using only Python stdlib (re, string).
-
-        Strategy:
-        - keywords: lowercased, punctuation-stripped tokens with stopwords removed.
-        - entities: sequences of consecutive Title-Case words (named entity candidates).
-
-        No external NLP libraries required.
-
-        Args:
-            query: Raw query text from the user.
-
-        Returns:
-            (keywords, entities) — both are lists of lowercase strings.
-        """
-        _STOPWORDS = {
-            "a",
-            "an",
-            "and",
-            "are",
-            "as",
-            "at",
-            "be",
-            "been",
-            "but",
-            "by",
-            "did",
-            "do",
-            "does",
-            "for",
-            "from",
-            "had",
-            "has",
-            "have",
-            "he",
-            "her",
-            "him",
-            "his",
-            "how",
-            "i",
-            "if",
-            "in",
-            "is",
-            "it",
-            "its",
-            "just",
-            "me",
-            "my",
-            "no",
-            "not",
-            "of",
-            "on",
-            "or",
-            "our",
-            "she",
-            "so",
-            "that",
-            "the",
-            "their",
-            "them",
-            "then",
-            "there",
-            "they",
-            "this",
-            "to",
-            "too",
-            "up",
-            "us",
-            "was",
-            "we",
-            "what",
-            "when",
-            "where",
-            "which",
-            "who",
-            "will",
-            "with",
-            "you",
-            "your",
-        }
-        clean = query.translate(str.maketrans("", "", string.punctuation))
-        tokens = clean.lower().split()
-        keywords = [t for t in tokens if t and t not in _STOPWORDS and len(t) > 2]
-        entity_pattern = re.compile(r"\b[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\b")
-        entities = [e.lower() for e in entity_pattern.findall(query) if len(e) > 2]
-        return keywords, entities
-
     async def _enhance_query(self, query: str) -> Tuple[List[str], List[str]]:
         """
         Generate both expanded queries and hypothetical paragraphs in a SINGLE API call.
@@ -679,10 +585,10 @@ class SemanticMemoryService:
         )
 
         query_vectors = self._embeddings.embed_documents(query_texts)
-
+        logger.debug("Generated dense vectors for all query variations")
         if self._config.retrieval_enable_sparse:
             query_sparse_vectors = self._embeddings.embed_sparse_documents(query_texts)
-
+            logger.debug("Generated sparse vectors for all query variations")
             def _hybrid_search(
                 args: Tuple[List[float], Dict[str, Any]],
             ) -> List[SemanticMemoryUnit]:
@@ -746,9 +652,14 @@ class SemanticMemoryService:
         return deduplicated, seen_ids
 
     def _get_reranker(self) -> CohereReranker:
-        """Lazy initialization of Cohere re-ranker."""
+        """Lazy initialization of Cohere re-ranker.
+
+        The reranker is created with ``config`` object so that the re-ranker itself can resolve the key
+        """
         if self._reranker is None:
-            self._reranker = CohereReranker(api_key=self._cohere_api_key)
+            self._reranker = CohereReranker(
+                config=self._config
+            )
         return self._reranker
 
     async def _rerank_memories(

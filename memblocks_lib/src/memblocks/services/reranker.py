@@ -6,6 +6,10 @@ instead of LLM-based re-ranking to reduce latency and improve retrieval accuracy
 
 import os
 from typing import List, Optional, TYPE_CHECKING
+import cohere
+
+if TYPE_CHECKING:
+    from memblocks.config import MemBlocksConfig
 from dataclasses import dataclass
 
 from memblocks.logger import get_logger
@@ -34,7 +38,11 @@ class CohereReranker:
     
     Example:
         ```python
-        reranker = CohereReranker(api_key="your-api-key")
+        from memblocks.config import MemBlocksConfig
+        config = MemBlocksConfig(cohere_api_key="your-api-key")
+
+        # or let the config read the key from your .env file
+        reranker = CohereReranker(config=config)
         reranked_memories = await reranker.rerank(
             query="What is the user's favorite programming language?",
             memories=retrieved_memories,
@@ -45,21 +53,27 @@ class CohereReranker:
     
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        model: str = "rerank-english-v3.0",
+        model: str = "rerank-v4.0-fast",
+        config: Optional["MemBlocksConfig"] = None,
     ) -> None:
         """
         Initialize Cohere re-ranker.
-        
+
         Args:
-            api_key: Cohere API key. If None, reads from COHERE_API_KEY env var.
-            model: Cohere rerank model to use. Default: rerank-english-v3.0 (free tier)
+            model: Cohere rerank model to use. Default: rerank-v4.0-fast (free tier)
+            config: MemBlocksConfig; if supplied and contains
+                ``cohere_api_key`` it will be used when ``api_key`` is None.
         """
-        self._api_key = api_key or os.environ.get("COHERE_API_KEY")
+        # prefer explicit parameter, then config, then env var
+        if config and getattr(config, "cohere_api_key", None):
+            self._api_key = config.cohere_api_key  # type: ignore[attr-defined]
+        else:
+            self._api_key = os.environ.get("COHERE_API_KEY")
+
         if not self._api_key:
             raise ValueError(
-                "Cohere API key not provided. Set COHERE_API_KEY environment variable "
-                "or pass api_key parameter."
+                "Cohere API key not provided. Set COHERE_API_KEY environment variable,"
+                " pass api_key, or include cohere_api_key in MemBlocksConfig."
             )
         
         self._model = model
@@ -69,7 +83,6 @@ class CohereReranker:
         """Lazy initialization of Cohere client."""
         if self._client is None:
             try:
-                import cohere
                 self._client = cohere.ClientV2(self._api_key)
             except ImportError as e:
                 raise ImportError(
@@ -120,12 +133,13 @@ class CohereReranker:
             effective_top_n = top_n if top_n is not None else len(memories)
             
             logger.debug(
-                "Re-ranking %d memories with Cohere (model=%s, top_n=%d)",
+                "Re-ranking %d memories with Cohere (model=%s, top_n=%d):",
                 len(memories),
                 self._model,
                 effective_top_n,
             )
-            
+
+
             # Call Cohere rerank API
             results = client.rerank(
                 model=self._model,
@@ -133,7 +147,6 @@ class CohereReranker:
                 documents=documents,
                 top_n=effective_top_n,
             )
-            
             # Map results back to original memories with scores
             reranked_memories: List["SemanticMemoryUnit"] = []
             

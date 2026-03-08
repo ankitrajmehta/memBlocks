@@ -200,6 +200,7 @@ client = MemBlocksClient(config)
 | `groq_api_key` | `GROQ_API_KEY` | `None` | API key for Groq (required when provider is `"groq"`) |
 | `gemini_api_key` | `GEMINI_API_KEY` | `None` | API key for Google Gemini (required when provider is `"gemini"`) |
 | `openrouter_api_key` | `OPENROUTER_API_KEY` | `None` | API key for OpenRouter (required when provider is `"openrouter"`) |
+| `cohere_api_key` | `COHERE_API_KEY` | `None` | API key for Cohere re-ranker (required when using Cohere-based reranking) |
 | `llm_model` | `LLM_MODEL` | `meta-llama/llama-4-maverick-17b-128e-instruct` | Model identifier (provider-specific) |
 | `mongodb_connection_string` | `MONGODB_CONNECTION_STRING` | *required* | MongoDB connection URI |
 | `mongodb_database_name` | `MONGODB_DATABASE_NAME` | `memblocks` | Database name |

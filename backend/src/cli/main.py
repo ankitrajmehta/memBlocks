@@ -140,7 +140,7 @@ async def _run_cli() -> None:
                 ),
                 ps2_conflict_resolution=LLMTaskSettings(
                     provider="groq",
-                    model="meta-llama/llama-4-scout-17b-16e-instruct"
+                    model="meta-llama/llama-4-maverick-17b-128e-instruct"
                 ),
                 core_memory_extraction=LLMTaskSettings(
                     provider="groq",
@@ -150,7 +150,6 @@ async def _run_cli() -> None:
                     provider="groq",
                     model="openai/gpt-oss-120b"
                 ),
-
             )
                                  
         )

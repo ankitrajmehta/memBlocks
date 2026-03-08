@@ -97,9 +97,13 @@ async def test_cohere_reranker():
         print(f"  {i}. [{memory.memory_id}] {memory.content[:60]}...")
     
     try:
-        # Initialize Cohere re-ranker (will read API key from .env)
-        reranker = CohereReranker()
-        print("\n✓ Cohere re-ranker initialized successfully")
+        # Load configuration (reads .env automatically)
+        from memblocks.config import MemBlocksConfig
+
+        config = MemBlocksConfig()
+        # Initialize Cohere re-ranker; key is pulled from config by default
+        reranker = CohereReranker(config=config)
+        print("\n✓ Cohere re-ranker initialized successfully (via config)")
         
         # Test re-ranking
         print("\nRe-ranking memories with Cohere...")
@@ -137,7 +141,7 @@ async def test_cohere_reranker():
         print("Please install cohere: pip install cohere==5.5.1")
     except ValueError as e:
         print(f"\n❌ Configuration Error: {e}")
-        print("Please ensure COHERE_API_KEY is set in .env file")
+        print("Please ensure COHERE_API_KEY is provided either in your .env or via MemBlocksConfig")
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback
