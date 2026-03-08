@@ -77,13 +77,17 @@ class GroqLLMProvider(LLMProvider):
                     LangChainInstrumentor,
                 )
                 from arize.otel import register
+                from opentelemetry import trace
 
-                tracer_provider = register(
-                    space_id=config.arize_space_id,
-                    api_key=config.arize_api_key,
-                    project_name=config.arize_project_name,
-                )
-                LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+                existing = trace.get_tracer_provider()
+                if not hasattr(existing, '_initialized'):
+                    tracer_provider = register(
+                        space_id=config.arize_space_id,
+                        api_key=config.arize_api_key,
+                        project_name=config.arize_project_name,
+                    )
+                    tracer_provider._initialized = True
+                    LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
             except ImportError:
                 logger.warning(
                     "Arize/openinference packages not installed — monitoring disabled."
@@ -129,13 +133,17 @@ class GroqLLMProvider(LLMProvider):
                     LangChainInstrumentor,
                 )
                 from arize.otel import register
+                from opentelemetry import trace
 
-                tracer_provider = register(
-                    space_id=arize_space_id,
-                    api_key=arize_api_key,
-                    project_name=arize_project_name,
-                )
-                LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+                existing = trace.get_tracer_provider()
+                if not hasattr(existing, '_initialized'):
+                    tracer_provider = register(
+                        space_id=arize_space_id,
+                        api_key=arize_api_key,
+                        project_name=arize_project_name,
+                    )
+                    tracer_provider._initialized = True
+                    LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
             except ImportError:
                 logger.warning(
                     "Arize/openinference packages not installed — monitoring disabled."

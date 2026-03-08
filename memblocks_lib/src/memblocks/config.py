@@ -276,6 +276,16 @@ class MemBlocksConfig(BaseSettings):
     arize_project_name: str = Field("memBlocks", validation_alias="ARIZE_PROJECT_NAME")
 
     # -------------------------------------------------------------------------
+    # Clerk Authentication
+    # -------------------------------------------------------------------------
+    clerk_publishable_key: Optional[str] = Field(
+        None, validation_alias="CLERK_PUBLISHABLE_KEY"
+    )
+    clerk_secret_key: Optional[str] = Field(
+        None, validation_alias="CLERK_SECRET_KEY"
+    )
+
+    # -------------------------------------------------------------------------
     # Pydantic settings config
     # -------------------------------------------------------------------------
     model_config = SettingsConfigDict(

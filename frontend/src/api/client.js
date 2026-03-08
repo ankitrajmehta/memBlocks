@@ -1,6 +1,16 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8001/api';
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8001') + '/api';
+
+export const setAuthToken = (token) => {
+  if (token) {
+    localStorage.setItem('clerk_token', token);
+  } else {
+    localStorage.removeItem('clerk_token');
+  }
+};
+
+export const getAuthToken = () => localStorage.getItem('clerk_token');
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -9,227 +19,207 @@ const apiClient = axios.create({
   },
 });
 
-// Add response interceptor for error handling
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('clerk_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  } else {
+    console.warn('No auth token found in localStorage');
+  }
+  return config;
+});
+
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      setAuthToken(null);
+      window.location.href = '/';
+    }
     if (error.response) {
-      // Server responded with error status
       console.error('API Error:', error.response.data);
-      throw new Error(error.response.data.detail || 'An error occurred');
+      throw new Error(error.response.data?.detail || 'An error occurred');
     } else if (error.request) {
-      // Request made but no response
       console.error('Network Error:', error.request);
       throw new Error('Network error - please check backend is running');
     } else {
-      // Something else happened
       console.error('Error:', error.message);
       throw error;
     }
   }
 );
 
-// ==================== USERS ====================
+// ==================== AUTH ====================
 
-/**
- * Create a new user
- * @param {string} userId - Unique user identifier
- * @returns {Promise<Object>} Created user object
- */
-export const createUser = async (userId) => {
-  const response = await apiClient.post('/users', { user_id: userId });
-  return response.data.data;
-};
-
-/**
- * List all users
- * @returns {Promise<Array>} Array of user objects
- */
-export const listUsers = async () => {
-  const response = await apiClient.get('/users');
-  return response.data.data || [];
-};
-
-/**
- * Get a specific user by ID
- * @param {string} userId - User identifier
- * @returns {Promise<Object>} User object
- */
-export const getUser = async (userId) => {
-  const response = await apiClient.get(`/users/${userId}`);
-  return response.data.data;
+export const getCurrentUser = async () => {
+  const response = await apiClient.get('/auth/me');
+  return response.data;
 };
 
 // ==================== BLOCKS ====================
 
-/**
- * Create a new memory block
- * @param {string} userId - User identifier
- * @param {string} name - Block name
- * @param {string} description - Block description
- * @returns {Promise<Object>} Created block object
- */
-export const createBlock = async (userId, name, description = '') => {
-  const response = await apiClient.post('/blocks', {
-    user_id: userId,
-    name: name,
-    description: description || undefined,
+export const createBlock = async (name, description = '', createSemantic = true, createCore = true) => {
+  const response = await apiClient.post('/blocks/', {
+    name,
+    description,
+    create_semantic: createSemantic,
+    create_core: createCore,
   });
-  return response.data.data;
+  return response.data;
 };
 
-/**
- * List all blocks for a user
- * @param {string} userId - User identifier
- * @returns {Promise<Array>} Array of block objects
- */
 export const listBlocks = async (userId) => {
-  const response = await apiClient.get(`/blocks/${userId}`);
-  return response.data.data || [];
+  const response = await apiClient.get(`/blocks/user/${userId}`);
+  return response.data || [];
 };
 
-/**
- * Get a specific block by ID
- * @param {string} blockId - Block identifier
- * @returns {Promise<Object>} Block object
- */
-export const getBlock = async (userId, blockId) => {
-  const response = await apiClient.get(`/blocks/${userId}/${blockId}`);
-  return response.data.data;
+export const getBlock = async (blockId) => {
+  const response = await apiClient.get(`/blocks/${blockId}`);
+  return response.data;
 };
 
-/**
- * Delete a block
- * @param {string} blockId - Block identifier
- * @returns {Promise<Object>} Deletion confirmation
- */
-export const deleteBlock = async (userId, blockId) => {
-  const response = await apiClient.delete(`/blocks/${userId}/${blockId}`);
+export const deleteBlock = async (blockId) => {
+  const response = await apiClient.delete(`/blocks/${blockId}`);
   return response.data;
 };
 
 // ==================== CHAT ====================
 
-/**
- * Start a new chat session
- * @param {string} userId - User identifier
- * @param {string} blockId - Block identifier
- * @returns {Promise<Object>} Session object with session_id
- */
-export const startSession = async (userId, blockId) => {
+export const createSession = async (blockId) => {
   const response = await apiClient.post('/chat/sessions', {
-    user_id: userId,
     block_id: blockId,
   });
-  return response.data.data;
+  return response.data;
 };
 
-/**
- * Send a message in a chat session
- * @param {string} sessionId - Session identifier
- * @param {string} message - User message
- * @returns {Promise<Object>} Response object with assistant reply
- */
-export const sendMessage = async (sessionId, message) => {
-  const response = await apiClient.post('/chat/message', {
-    session_id: sessionId,
-    message: message,
-  });
-  return response.data.data;
-};
-
-/**
- * Get chat history for a session
- * @param {string} sessionId - Session identifier
- * @returns {Promise<Array>} Array of message objects
- */
-export const getChatHistory = async (sessionId) => {
+export const getSession = async (sessionId) => {
   const response = await apiClient.get(`/chat/sessions/${sessionId}`);
-  return response.data.data;
+  return response.data;
 };
 
-/**
- * Get processing history for a session
- * @param {string} sessionId - Session identifier
- * @returns {Promise<Object>} Processing history with events array
- */
-export const getProcessingHistory = async (sessionId) => {
-  const response = await apiClient.get(`/chat/sessions/${sessionId}/processing-history`);
-  return response.data.data;
+export const listBlockSessions = async (blockId) => {
+  const response = await apiClient.get(`/chat/sessions/block/${blockId}`);
+  return response.data || [];
+};
+
+export const sendMessage = async (sessionId, message) => {
+  const response = await apiClient.post(`/chat/sessions/${sessionId}/message`, {
+    message,
+  });
+  return response.data;
+};
+
+export const flushSession = async (sessionId) => {
+  const response = await apiClient.post(`/chat/sessions/${sessionId}/flush`);
+  return response.data;
+};
+
+export const getChatHistory = async (sessionId) => {
+  const response = await apiClient.get(`/chat/sessions/${sessionId}/history`);
+  return response.data || [];
+};
+
+export const getFullSessionContext = async (sessionId) => {
+  const response = await apiClient.get(`/chat/sessions/${sessionId}/full-context`);
+  return response.data;
+};
+
+export const getSessionSummary = async (sessionId) => {
+  const response = await apiClient.get(`/chat/sessions/${sessionId}/summary`);
+  return response.data;
 };
 
 // ==================== MEMORY ====================
 
-/**
- * Get core memory for a block
- * @param {string} blockId - Block identifier
- * @returns {Promise<Object>} Core memory object
- */
 export const getCoreMemory = async (blockId) => {
-  const response = await apiClient.get(`/memory/${blockId}/core`);
-  return response.data.data;
+  const response = await apiClient.get(`/memory/core/${blockId}`);
+  return response.data;
 };
 
-/**
- * Get recursive summary for a block
- * @param {string} blockId - Block identifier
- * @returns {Promise<Object>} Recursive summary object
- */
-export const getRecursiveSummary = async (blockId) => {
-  const response = await apiClient.get(`/memory/${blockId}/summary`);
-  return response.data.data;
-};
-
-/**
- * Get semantic memories for a block
- * @param {string} blockId - Block identifier
- * @param {number} limit - Maximum number of memories to retrieve
- * @returns {Promise<Array>} Array of semantic memory objects
- */
-export const getSemanticMemories = async (blockId, limit = 20) => {
-  const response = await apiClient.get(`/memory/${blockId}/semantic`, {
-    params: { limit },
+export const updateCoreMemory = async (blockId, personaContent, humanContent) => {
+  const response = await apiClient.patch(`/memory/core/${blockId}`, {
+    persona_content: personaContent,
+    human_content: humanContent,
   });
-  return response.data.data;
+  return response.data;
 };
 
-/**
- * Search memories
- * @param {string} blockId - Block identifier
- * @param {string} query - Search query
- * @param {number} limit - Maximum number of results
- * @returns {Promise<Array>} Array of matching memory objects
- */
-export const searchMemories = async (blockId, query, limit = 10) => {
-  const response = await apiClient.post('/memory/search', {
-    block_id: blockId,
-    query: query,
-    limit: limit,
+export const searchMemories = async (blockId, query, topK = 5) => {
+  const response = await apiClient.post(`/memory/semantic/${blockId}/search`, {
+    query,
+    top_k: topK,
   });
-  return response.data.data;
+  return response.data || [];
+};
+
+// ==================== TRANSPARENCY ====================
+
+export const getTransparencyStats = async () => {
+  const response = await apiClient.get('/transparency/stats');
+  return response.data;
+};
+
+export const getProcessingHistory = async (limit = 20) => {
+  const response = await apiClient.get(`/transparency/processing-history?limit=${limit}`);
+  return response.data || [];
+};
+
+// ==================== SESSION PERSISTENCE ====================
+
+const SESSION_STORAGE_KEY = 'memblocks_active_sessions';
+
+export const saveActiveSession = (blockId, sessionId) => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || '{}');
+    stored[blockId] = sessionId;
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stored));
+  } catch (e) {
+    console.error('Failed to save session to localStorage:', e);
+  }
+};
+
+export const getActiveSession = (blockId) => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || '{}');
+    return stored[blockId] || null;
+  } catch (e) {
+    console.error('Failed to read session from localStorage:', e);
+    return null;
+  }
+};
+
+export const clearActiveSession = (blockId) => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || '{}');
+    delete stored[blockId];
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stored));
+  } catch (e) {
+    console.error('Failed to clear session from localStorage:', e);
+  }
 };
 
 export default {
-  // Users
-  createUser,
-  listUsers,
-  getUser,
-  
-  // Blocks
+  setAuthToken,
+  getAuthToken,
+  getCurrentUser,
   createBlock,
   listBlocks,
   getBlock,
   deleteBlock,
-  
-  // Chat
-  startSession,
+  createSession,
+  getSession,
+  listBlockSessions,
   sendMessage,
+  flushSession,
   getChatHistory,
-  getProcessingHistory,
-  
-  // Memory
+  getFullSessionContext,
+  getSessionSummary,
   getCoreMemory,
-  getRecursiveSummary,
-  getSemanticMemories,
+  updateCoreMemory,
   searchMemories,
+  getTransparencyStats,
+  getProcessingHistory,
+  saveActiveSession,
+  getActiveSession,
+  clearActiveSession,
 };

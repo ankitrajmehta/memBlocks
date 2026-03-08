@@ -1,227 +1,54 @@
-# memBlocks Frontend
+# MemBlocks Frontend
 
-Modern React frontend for **memBlocks** - an intelligent, modular memory management system for LLMs.
+The MemBlocks frontend is a modern, responsive Single Page Application (SPA) built with **React** and **Vite**. It provides a sleek, dark-themed user interface for interacting with the MemBlocks backend and visualizing real-time memory analytics.
 
-## 🚀 Features
+## Tech Stack
+- **Framework**: React 18 + Vite
+- **Styling**: TailwindCSS
+- **Routing**: React Router DOM v6
+- **Authentication**: Clerk `@clerk/react`
 
-- **Split-Screen Interface**: Chat panel on the left, control panel on the right
-- **User Management**: Create and select users
-- **Memory Block Management**: Create and manage memory blocks (cartridge-like memory contexts)
-- **Real-time Chat**: Interactive chat interface with message history
-- **Memory Viewer**: View core memory stored in blocks
-- **Recursive Summary**: Display hierarchical memory summaries
-- **Responsive Design**: Works on desktop and mobile devices
-- **Modern Tech Stack**: React 18, Vite, Tailwind CSS, Axios
+## Architecture Overview
 
-## 📋 Prerequisites
+The frontend code is structured inside `frontend/src/`:
 
-- **Node.js** 16+ (or npm/pnpm/yarn)
-- **Backend API** running at `http://localhost:80001`
-  - Make sure the memBlocks backend is running (see main project README)
-  - Required services: MongoDB, Qdrant, Ollama
+1. **`api/client.js`**: The central Axios HTTP client configured to intercept requests and inject the Clerk JWT `Authorization` header automatically. Handles all communication with the FastAPI backend (CRUD on blocks, sending messages, fetching transparency stats, etc.).
+2. **`components/`**: Reusable UI components.
+    - **`ChatInterface.jsx`**: Manages the conversation UI. Automatically loads the active session from LocalStorage, tracks message states, pushing live semantic/core memory analytics up to the workspace, and handles safe session-switching and forced manual memory flushing (`/flush`) to ensure zero-context loss on new chats.
+    - **`AnalyticsPanel.jsx`**: The dynamic right sidebar that listens for live prop updates from the parent component. Displays real-time estimated Token Usage, live Core Memory extractions (Persona and Human profiles), Rolling Summaries, and Pipeline Transparency Stats fetched straight from the backend.
+    - **`BlockManager.jsx`**: The left sidebar containing the UI for listing, creating, selecting, and deleting Memory Blocks.
+3. **`pages/`**: Primary route views.
+    - **`Landing.jsx`**: The branded public entry point with background imagery and the Clerk Auth modal overlay.
+    - **`Workspace.jsx`**: The authenticated application view that glues together the Block Manager, Chat Interface, and Analytics Panel.
+4. **`App.jsx`**: The root routing logic that verifies the active user session and conditionally renders either the Landing or Workspace components.
 
-## 🛠️ Installation
+## Core Concepts
 
-```bash
-# Navigate to frontend directory
-cd frontend
+### Persistent Sessions
+The UI maps a specific `sessionId` to a `blockId` inside the browser's `localStorage`. This ensures that when a user refreshes the page, their exact context, chat history, rolling summary, and analytics are seamlessly re-fetched and restored without generating orphaned "abandoned" sessions in the database.
 
-# Install dependencies
-npm install
-# or
-pnpm install
-# or
-yarn install
-```
+### State Drilling for Live Analytics
+To ensure the UI is reactive, the `ChatInterface` captures the enriched response payload containing real-time processing stats (like the `memory_window_size` and freshly extracted `core_memory`) directly from the `/message` endpoint, emitting it up to `Workspace.jsx`, which passes it down to `AnalyticsPanel.jsx` to render instantly.
 
-## 🏃 Running the Application
+## Setup and Installation
 
-### Development Mode
+### Prerequisites
+- Node.js (v18+)
+- A `VITE_CLERK_PUBLISHABLE_KEY` in `frontend/.env`
+- Ensure the backend FastAPI server is running.
 
-```bash
-npm run dev
-```
+### Running the App locally
 
-The application will start at `http://localhost:3000`
-
-### Production Build
-
-```bash
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
-```
-
-## 🏗️ Project Structure
-
-```
-frontend/
-├── src/
-│   ├── api/
-│   │   └── client.js           # API client for backend communication
-│   ├── components/
-│   │   ├── ChatPanel.jsx       # Left panel - chat interface
-│   │   ├── OptionsPanel.jsx    # Right panel - controls container
-│   │   ├── UserSelector.jsx    # User selection/creation
-│   │   ├── BlockSelector.jsx   # Block selection/creation
-│   │   ├── MemoryViewer.jsx    # Core memory display modal
-│   │   └── SummaryViewer.jsx   # Recursive summary modal
-│   ├── styles/
-│   │   └── App.css             # Global styles
-│   ├── App.jsx                 # Main application component
-│   └── main.jsx                # React entry point
-├── public/                     # Static assets
-├── index.html                  # HTML template
-├── vite.config.js              # Vite configuration
-├── tailwind.config.js          # Tailwind CSS configuration
-├── postcss.config.js           # PostCSS configuration
-└── package.json                # Dependencies and scripts
-```
-
-## 📡 API Integration
-
-The frontend communicates with the backend via REST API:
-
-- **Base URL**: `http://localhost:80001/api`
-- **Proxy**: Vite dev server proxies `/api` requests to backend
-
-### Available API Endpoints
-
-**Users:**
-- `POST /api/users` - Create user
-- `GET /api/users` - List users
-- `GET /api/users/{userId}` - Get user details
-
-**Blocks:**
-- `POST /api/blocks` - Create memory block
-- `GET /api/blocks?user_id={userId}` - List user's blocks
-- `GET /api/blocks/{blockId}` - Get block details
-- `DELETE /api/blocks/{blockId}` - Delete block
-
-**Chat:**
-- `POST /api/chat/start` - Start chat session
-- `POST /api/chat/message` - Send message
-- `GET /api/chat/history/{sessionId}` - Get chat history
-
-**Memory:**
-- `GET /api/memory/{blockId}/core` - Get core memory
-- `GET /api/memory/{blockId}/summary` - Get recursive summary
-- `GET /api/memory/{blockId}/semantic` - Get semantic memories
-- `POST /api/memory/search` - Search memories
-
-## 🎨 UI Components
-
-### ChatPanel
-- Displays conversation history
-- Message input with send button
-- Auto-scrolls to latest message
-- Shows current session info
-- Disabled when no active session
-
-### OptionsPanel
-Contains:
-- **UserSelector**: Dropdown + create new user form
-- **BlockSelector**: Dropdown + create new block form
-- **Action Buttons**: Start session, view memory, view summary
-- **Status Display**: Shows current user, block, and session state
-
-### MemoryViewer (Modal)
-- Displays core memory for selected block
-- Formatted display of memory contents
-- Shows metadata if available
-
-### SummaryViewer (Modal)
-- Displays recursive summary
-- Shows summary level and timestamp
-- Formatted text display
-
-## 🔧 Configuration
-
-### Backend URL
-
-To change the backend URL, edit `src/api/client.js`:
-
-```javascript
-const API_BASE_URL = 'http://your-backend-url:80001/api';
-```
-
-Or update the Vite proxy in `vite.config.js`:
-
-```javascript
-server: {
-  proxy: {
-    '/api': {
-      target: 'http://your-backend-url:80001',
-      changeOrigin: true,
-    }
-  }
-}
-```
-
-### Port Configuration
-
-Change dev server port in `vite.config.js`:
-
-```javascript
-server: {
-  port: 3000, // Change to desired port
-}
-```
-
-## 🎯 Usage Workflow
-
-1. **Select/Create User**: Choose an existing user or create a new one
-2. **Select/Create Block**: Choose a memory block or create a new one
-3. **Start Session**: Click "Start Chat Session" to begin
-4. **Chat**: Send messages and receive AI responses
-5. **View Memory**: Click "View Core Memory" to see stored facts
-6. **View Summary**: Click "View Recursive Summary" to see conversation summaries
-
-## 🐛 Troubleshooting
-
-### "Network error - please check backend is running"
-- Ensure backend API is running at `http://localhost:80001`
-- Check if MongoDB, Qdrant, and Ollama services are running
-- Run `docker-compose up -d` in project root
-
-### CORS Issues
-- Backend should have CORS configured for `http://localhost:3000`
-- Check backend `main.py` for CORS middleware settings
-
-### Chat messages not appearing
-- Check browser console for API errors
-- Verify session was started successfully
-- Check backend logs for errors
-
-## 🚀 Technology Stack
-
-- **React 18** - UI library
-- **Vite** - Build tool and dev server
-- **Tailwind CSS** - Utility-first CSS framework
-- **Axios** - HTTP client
-- **Modern JavaScript** - ES6+ features
-
-## 📦 Build Output
-
-```bash
-npm run build
-```
-
-Production build is output to `dist/` directory:
-- Optimized and minified JavaScript
-- CSS extracted and minified
-- Assets copied and hashed
-
-## 🤝 Contributing
-
-This frontend is part of the memBlocks project. See main project README for contribution guidelines.
-
-## 📄 License
-
-Part of the memBlocks project.
-
----
-
-**Need Help?** Check the main project documentation or backend API docs.
+1. Navigate to the `frontend` directory:
+   ```bash
+   cd frontend
+   ```
+2. Install Node dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the Vite development server (default port 5173):
+   ```bash
+   npm run dev
+   ```
+4. Access the application in your browser at: `http://localhost:5173`
