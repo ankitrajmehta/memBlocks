@@ -109,6 +109,11 @@ export const sendMessage = async (sessionId, message) => {
   return response.data;
 };
 
+export const flushSession = async (sessionId) => {
+  const response = await apiClient.post(`/chat/sessions/${sessionId}/flush`);
+  return response.data;
+};
+
 export const getChatHistory = async (sessionId) => {
   const response = await apiClient.get(`/chat/sessions/${sessionId}/history`);
   return response.data || [];
@@ -205,6 +210,7 @@ export default {
   getSession,
   listBlockSessions,
   sendMessage,
+  flushSession,
   getChatHistory,
   getFullSessionContext,
   getSessionSummary,

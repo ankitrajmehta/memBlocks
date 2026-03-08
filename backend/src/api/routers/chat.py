@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 
 from backend.src.api.dependencies import get_client
 from backend.src.api.models.requests import ChatRequest, CreateSessionRequest
@@ -119,6 +119,7 @@ async def list_block_sessions(
 async def send_message(
     session_id: str,
     body: ChatRequest,
+    background_tasks: BackgroundTasks,
     current_user: CurrentUser = Depends(get_current_user),
     client: MemBlocksClient = Depends(get_client),
 ) -> Dict[str, Any]:
@@ -194,14 +195,10 @@ async def send_message(
         print(f"Error calling LLM: {e}")
         raise HTTPException(status_code=500, detail=f"LLM call failed: {str(e)}")
 
-    # --- Persist turn (may trigger memory pipeline if window is full) ---
+    # --- Persist turn (runs memory pipeline in background to keep UI fast) ---
     processing_triggered = False
     try:
-        msg_count_before = await client.mongo.get_session_message_count(session_id)
-        await session.add(user_msg=body.message, ai_response=ai_response)
-        msg_count_after = await client.mongo.get_session_message_count(session_id)
-        # If message count decreased, pipeline ran and trimmed messages
-        processing_triggered = msg_count_after < msg_count_before + 2
+        background_tasks.add_task(session.add, user_msg=body.message, ai_response=ai_response)
     except Exception as e:
         print(f"Error persisting turn: {e}")
 
@@ -271,6 +268,40 @@ async def send_message(
         "pipeline_runs": pipeline_runs,
         "operation_summary": operation_summary,
     }
+
+
+# ------------------------------------------------------------------ #
+# Manual Flush
+# ------------------------------------------------------------------ #
+
+@router.post("/sessions/{session_id}/flush", response_model=Dict[str, Any])
+async def flush_session(
+    session_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: CurrentUser = Depends(get_current_user),
+    client: MemBlocksClient = Depends(get_client),
+) -> Dict[str, Any]:
+    """Manually flush a session's messages through the memory pipeline."""
+    session = await client.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    
+    if session.user_id != current_user.user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot flush another user's session",
+        )
+    
+    try:
+        background_tasks.add_task(session.flush)
+        return {
+            "session_id": session_id,
+            "status": "flush_enqueued",
+            "summary": "Updating in background",
+        }
+    except Exception as e:
+        print(f"Error flushing session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ------------------------------------------------------------------ #

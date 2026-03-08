@@ -6,6 +6,7 @@ import {
   listBlockSessions,
   saveActiveSession,
   getActiveSession,
+  flushSession,
 } from '../api/client';
 
 function ChatInterface({ activeBlocks, sessionId, onSessionChange, onChatStats }) {
@@ -19,6 +20,7 @@ function ChatInterface({ activeBlocks, sessionId, onSessionChange, onChatStats }
   const [resuming, setResuming] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const ignoreNextLoadRef = useRef(false);
 
   // Track current block
   useEffect(() => {
@@ -80,6 +82,10 @@ function ChatInterface({ activeBlocks, sessionId, onSessionChange, onChatStats }
   // Load full context when session changes externally
   useEffect(() => {
     if (sessionId && !resuming) {
+      if (ignoreNextLoadRef.current) {
+        ignoreNextLoadRef.current = false;
+        return;
+      }
       loadFullContext();
     }
   }, [sessionId]);
@@ -122,6 +128,17 @@ function ChatInterface({ activeBlocks, sessionId, onSessionChange, onChatStats }
     if (!currentBlock) return;
     setError(null);
     try {
+      // Flush current session before abandoning it to ensure recent messages are processed
+      if (sessionId) {
+        try {
+          // Fire and forget so we don't wait for the frontend blocked response
+          flushSession(sessionId).catch(e => console.error(e));
+        } catch (e) {
+          console.error('Failed to flush prior session context:', e);
+        }
+      }
+
+      ignoreNextLoadRef.current = true;
       const session = await createSession(currentBlock.block_id);
       onSessionChange(session.session_id);
       saveActiveSession(currentBlock.block_id, session.session_id);
@@ -309,8 +326,8 @@ function ChatInterface({ activeBlocks, sessionId, onSessionChange, onChatStats }
             >
               <div
                 className={`max-w-[70%] px-4 py-2 rounded-2xl ${msg.role === 'user'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-800 text-gray-100'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-800 text-gray-100'
                   }`}
               >
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>

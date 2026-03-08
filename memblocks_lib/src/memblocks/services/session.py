@@ -165,6 +165,48 @@ class Session:
 
 
     # ------------------------------------------------------------------ #
+    # Manual Flush
+    # ------------------------------------------------------------------ #
+
+    async def flush(self) -> str:
+        """
+        Manually trigger the memory pipeline for all current messages in the window,
+        even if the window size has not reached the limit.
+        
+        This is useful for persisting context when a session is explicitly ended
+        or abandoned by the user (e.g., clicking "New Chat").
+        
+        Returns:
+            The new recursive summary.
+        """
+        msg_count = await self._mongo.get_session_message_count(self.id)
+        if msg_count == 0:
+            return await self.get_recursive_summary()
+
+        messages = await self._mongo.get_session_messages(self.id)
+        current_summary = await self._mongo.get_session_summary(self.id)
+
+        logger.debug(
+            "Session %s: manually flushed (%s messages)",
+            self.id,
+            msg_count,
+        )
+
+        new_summary = await self._pipeline.run(
+            user_id=self.user_id,
+            block_id=self.block_id,
+            messages=messages,
+            current_summary=current_summary,
+        )
+
+        # Persist updated summary and trim messages to keep_last_n
+        await self._mongo.set_session_summary(self.id, new_summary)
+        await self._mongo.trim_session_messages(self.id, self._keep_last_n)
+        
+        return new_summary
+
+
+    # ------------------------------------------------------------------ #
     # Repr
     # ------------------------------------------------------------------ #
 
