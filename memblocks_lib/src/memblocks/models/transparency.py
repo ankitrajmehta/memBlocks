@@ -6,7 +6,7 @@ and may be serialised and returned to callers via the MemBlocksClient API.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -51,10 +51,16 @@ class RetrievalEntry(BaseModel):
     memory_ids: List[str] = Field(default_factory=list)
     memory_summaries: List[str] = Field(default_factory=list)
     # Enhanced retrieval metadata
-    expanded_queries: List[str] = Field(default_factory=list, description="Query expansion results")
-    hypothetical_paragraphs: List[str] = Field(default_factory=list, description="Hypothetical answer paragraphs")
+    expanded_queries: List[str] = Field(
+        default_factory=list, description="Query expansion results"
+    )
+    hypothetical_paragraphs: List[str] = Field(
+        default_factory=list, description="Hypothetical answer paragraphs"
+    )
     reranked: bool = Field(default=False, description="Whether results were re-ranked")
-    retrieval_method: str = Field(default="vector", description="Retrieval method used: vector, hybrid, etc.")
+    retrieval_method: str = Field(
+        default="vector", description="Retrieval method used: vector, hybrid, etc."
+    )
 
 
 class PipelineRunEntry(BaseModel):
@@ -71,6 +77,56 @@ class PipelineRunEntry(BaseModel):
     core_memory_updated: bool = False
     summary_generated: bool = False
     error_details: Optional[str] = None
+    llm_usage: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Per-call-type LLM usage snapshot for this pipeline run.",
+    )
+
+
+# --------------------------------------------------------------------------- #
+# LLM Usage Tracking Models
+# --------------------------------------------------------------------------- #
+
+
+class LLMCallType(str, Enum):
+    """Category of LLM call made by the library."""
+
+    PS1_EXTRACTION = "ps1_extraction"
+    PS2_CONFLICT = "ps2_conflict"
+    RETRIEVAL = "retrieval"  # query expansion + HyDE
+    CORE_MEMORY = "core_memory"
+    SUMMARY = "summary"
+    CONVERSATION = "conversation"
+
+
+class LLMCallRecord(BaseModel):
+    """A single recorded LLM API call with usage statistics."""
+
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    call_type: LLMCallType
+    block_id: Optional[str] = Field(
+        None, description="Block this call was made on behalf of."
+    )
+    model: str
+    provider: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    latency_ms: float = 0.0  # wall-clock ms for the call
+    success: bool = True
+    error: Optional[str] = None
+
+
+class LLMUsageSummary(BaseModel):
+    """Aggregated LLM usage statistics for a single call type."""
+
+    call_type: LLMCallType
+    request_count: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_tokens: int = 0
+    total_latency_ms: float = 0.0
+    avg_latency_ms: float = 0.0
 
 
 __all__ = [
@@ -79,4 +135,7 @@ __all__ = [
     "OperationEntry",
     "RetrievalEntry",
     "PipelineRunEntry",
+    "LLMCallType",
+    "LLMCallRecord",
+    "LLMUsageSummary",
 ]

@@ -2,12 +2,39 @@
 
 from functools import lru_cache
 from memblocks import MemBlocksClient, MemBlocksConfig
+from memblocks.llm.task_settings import LLMSettings, LLMTaskSettings
 
 
 @lru_cache(maxsize=1)
 def get_config() -> MemBlocksConfig:
     """Return (and cache) the MemBlocksConfig instance read from .env."""
-    return MemBlocksConfig()
+    return MemBlocksConfig(llm_settings=LLMSettings(
+                default=LLMTaskSettings(
+                    provider="groq",
+                    model="meta-llama/llama-4-maverick-17b-128e-instruct"
+                ),
+                retrieval=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-20b"
+                ),
+                ps1_semantic_extraction=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-120b"
+                ),
+                ps2_conflict_resolution=LLMTaskSettings(
+                    provider="groq",
+                    model="meta-llama/llama-4-maverick-17b-128e-instruct"
+                ),
+                core_memory_extraction=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-120b"
+                ),
+                recursive_summary=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-120b"
+                ),
+            )
+    )
 
 
 @lru_cache(maxsize=1)

@@ -18,6 +18,7 @@ from memblocks.logger import get_logger
 
 if TYPE_CHECKING:
     from memblocks.services.memory_pipeline import MemoryPipeline
+    from memblocks.services.transparency import LLMUsageTracker
     from memblocks.storage.mongo import MongoDBAdapter
 
 logger = get_logger(__name__)
@@ -52,6 +53,7 @@ class Session:
         memory_window_limit: int = 10,
         keep_last_n: int = 5,
         created_at: Optional[str] = None,
+        llm_usage_tracker: Optional["LLMUsageTracker"] = None,
     ) -> None:
         self.id = session_id
         self.user_id = user_id
@@ -62,6 +64,7 @@ class Session:
         self._pipeline = pipeline
         self._memory_window_limit = memory_window_limit
         self._keep_last_n = keep_last_n
+        self._llm_usage = llm_usage_tracker
 
     # ------------------------------------------------------------------ #
     # Memory window
@@ -163,6 +166,13 @@ class Session:
             # Persist updated summary and trim messages
             await self._mongo.set_session_summary(self.id, new_summary)
 
+            # Persist cumulative block-level LLM usage to MongoDB
+            if self._llm_usage is not None:
+                block_usage = self._llm_usage.get_block_summary(self.block_id)
+                serialised = {
+                    ct: summary.model_dump() for ct, summary in block_usage.items()
+                }
+                await self._mongo.update_block_llm_usage(self.block_id, serialised)
 
     # ------------------------------------------------------------------ #
     # Manual Flush
@@ -172,10 +182,10 @@ class Session:
         """
         Manually trigger the memory pipeline for all current messages in the window,
         even if the window size has not reached the limit.
-        
+
         This is useful for persisting context when a session is explicitly ended
         or abandoned by the user (e.g., clicking "New Chat").
-        
+
         Returns:
             The new recursive summary.
         """
@@ -202,9 +212,16 @@ class Session:
         # Persist updated summary and trim messages to keep_last_n
         await self._mongo.set_session_summary(self.id, new_summary)
         await self._mongo.trim_session_messages(self.id, self._keep_last_n)
-        
-        return new_summary
 
+        # Persist cumulative block-level LLM usage to MongoDB
+        if self._llm_usage is not None:
+            block_usage = self._llm_usage.get_block_summary(self.block_id)
+            serialised = {
+                ct: summary.model_dump() for ct, summary in block_usage.items()
+            }
+            await self._mongo.update_block_llm_usage(self.block_id, serialised)
+
+        return new_summary
 
     # ------------------------------------------------------------------ #
     # Repr

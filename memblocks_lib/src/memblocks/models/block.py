@@ -33,6 +33,13 @@ class MemoryBlockMetaData(BaseModel):
     user_id: Optional[str] = Field(
         None, description="Identifier for the user associated with this block."
     )
+    llm_usage: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Aggregated LLM token usage and timing per call type for this block. "
+            "Keys are LLMCallType values; values are LLMUsageSummary dicts."
+        ),
+    )
 
 
 class MemoryBlock(BaseModel):

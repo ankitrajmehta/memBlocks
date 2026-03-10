@@ -19,6 +19,9 @@ from typing import Any, Callable, Dict, List, Optional
 from memblocks.logger import get_logger
 from memblocks.models.transparency import (
     DBType,
+    LLMCallRecord,
+    LLMCallType,
+    LLMUsageSummary,
     OperationEntry,
     OperationType,
     PipelineRunEntry,
@@ -206,6 +209,8 @@ class ProcessingHistory:
         entry.conflicts_resolved_count = result.get("conflicts_resolved_count", 0)
         entry.core_memory_updated = result.get("core_memory_updated", False)
         entry.summary_generated = result.get("summary_generated", False)
+        if "llm_usage" in result:
+            entry.llm_usage = result["llm_usage"]
         return entry
 
     def record_failure(self, task_id: str, error: str) -> PipelineRunEntry:
@@ -351,9 +356,206 @@ class EventBus:
                 logger.warning("EventBus callback error for '%s': %s", event_name, exc)
 
 
+# --------------------------------------------------------------------------- #
+# LLMUsageTracker
+# --------------------------------------------------------------------------- #
+
+
+class LLMUsageTracker:
+    """Thread-safe tracker for LLM call counts, token usage, and latency.
+
+    Tracks across all call types globally (since a client may serve multiple
+    blocks) and also maintains per-block aggregates. One instance is held on
+    ``MemBlocksClient`` and passed into every LLM provider at construction time.
+
+    Each provider calls ``record()`` immediately after every LLM invocation,
+    supplying a fully-populated ``LLMCallRecord``.  The tracker is append-only
+    up to ``max_records``; after that the oldest entry is evicted.
+
+    Example usage::
+
+        tracker = LLMUsageTracker()
+
+        # Inside a provider after a call:
+        tracker.record(LLMCallRecord(
+            call_type=LLMCallType.PS1_EXTRACTION,
+            block_id="block_abc",
+            model="llama3-8b-8192",
+            provider="groq",
+            input_tokens=512,
+            output_tokens=128,
+            total_tokens=640,
+            latency_ms=340.5,
+            success=True,
+        ))
+
+        # Query:
+        summary = tracker.get_summary()
+        block_summary = tracker.get_block_summary("block_abc")
+        totals = tracker.get_totals()
+    """
+
+    def __init__(self, max_records: int = 2000) -> None:
+        self._records: List[LLMCallRecord] = []
+        self._max = max_records
+        self._lock = threading.Lock()
+
+    # ------------------------------------------------------------------ #
+    # Write
+    # ------------------------------------------------------------------ #
+
+    def record(self, record: LLMCallRecord) -> None:
+        """Append a call record, evicting the oldest if at capacity."""
+        with self._lock:
+            if len(self._records) >= self._max:
+                self._records.pop(0)
+            self._records.append(record)
+
+    # ------------------------------------------------------------------ #
+    # Read — individual records
+    # ------------------------------------------------------------------ #
+
+    def get_records(
+        self,
+        call_type: Optional[LLMCallType] = None,
+        block_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[LLMCallRecord]:
+        """Return the most recent *limit* records, optionally filtered.
+
+        Args:
+            call_type: Only return records for this call type.
+            block_id:  Only return records associated with this block.
+            limit:     Maximum number of records to return.
+
+        Returns:
+            List of ``LLMCallRecord`` instances, newest last.
+        """
+        with self._lock:
+            records = list(self._records)
+        if call_type is not None:
+            records = [r for r in records if r.call_type == call_type]
+        if block_id is not None:
+            records = [r for r in records if r.block_id == block_id]
+        return records[-limit:]
+
+    # ------------------------------------------------------------------ #
+    # Read — aggregated summaries
+    # ------------------------------------------------------------------ #
+
+    def _build_summary(
+        self, records: List[LLMCallRecord], call_type: LLMCallType
+    ) -> LLMUsageSummary:
+        """Aggregate a list of records for a single call type."""
+        count = len(records)
+        total_in = sum(r.input_tokens for r in records)
+        total_out = sum(r.output_tokens for r in records)
+        total_tok = sum(r.total_tokens for r in records)
+        total_lat = sum(r.latency_ms for r in records)
+        avg_lat = total_lat / count if count > 0 else 0.0
+        return LLMUsageSummary(
+            call_type=call_type,
+            request_count=count,
+            total_input_tokens=total_in,
+            total_output_tokens=total_out,
+            total_tokens=total_tok,
+            total_latency_ms=total_lat,
+            avg_latency_ms=avg_lat,
+        )
+
+    def get_summary(self) -> Dict[str, LLMUsageSummary]:
+        """Return aggregated stats for every call type across all blocks.
+
+        Returns:
+            Dict mapping ``LLMCallType`` value strings to ``LLMUsageSummary``.
+        """
+        with self._lock:
+            records = list(self._records)
+
+        by_type: Dict[LLMCallType, List[LLMCallRecord]] = defaultdict(list)
+        for r in records:
+            by_type[r.call_type].append(r)
+
+        return {ct.value: self._build_summary(recs, ct) for ct, recs in by_type.items()}
+
+    def get_block_summary(self, block_id: str) -> Dict[str, LLMUsageSummary]:
+        """Return aggregated stats for every call type scoped to *block_id*.
+
+        Args:
+            block_id: The block to filter by.
+
+        Returns:
+            Dict mapping ``LLMCallType`` value strings to ``LLMUsageSummary``.
+        """
+        with self._lock:
+            records = [r for r in self._records if r.block_id == block_id]
+
+        by_type: Dict[LLMCallType, List[LLMCallRecord]] = defaultdict(list)
+        for r in records:
+            by_type[r.call_type].append(r)
+
+        return {ct.value: self._build_summary(recs, ct) for ct, recs in by_type.items()}
+
+    def get_run_summary(self, since: datetime) -> Dict[str, LLMUsageSummary]:
+        """Return aggregated stats for records created at or after *since*.
+
+        Used by ``MemoryPipeline`` to capture per-run usage by snapshotting
+        the start time before the run and querying here after completion.
+
+        Args:
+            since: Datetime threshold (inclusive).
+
+        Returns:
+            Dict mapping ``LLMCallType`` value strings to ``LLMUsageSummary``.
+        """
+        with self._lock:
+            records = [r for r in self._records if r.timestamp >= since]
+
+        by_type: Dict[LLMCallType, List[LLMCallRecord]] = defaultdict(list)
+        for r in records:
+            by_type[r.call_type].append(r)
+
+        return {ct.value: self._build_summary(recs, ct) for ct, recs in by_type.items()}
+
+    def get_totals(self) -> LLMUsageSummary:
+        """Return grand-total aggregated stats across all call types and blocks.
+
+        The ``call_type`` field on the returned summary is set to
+        ``LLMCallType.CONVERSATION`` as a sentinel (all types combined).
+
+        Returns:
+            Single ``LLMUsageSummary`` with combined counts.
+        """
+        with self._lock:
+            records = list(self._records)
+
+        count = len(records)
+        total_in = sum(r.input_tokens for r in records)
+        total_out = sum(r.output_tokens for r in records)
+        total_tok = sum(r.total_tokens for r in records)
+        total_lat = sum(r.latency_ms for r in records)
+        avg_lat = total_lat / count if count > 0 else 0.0
+
+        return LLMUsageSummary(
+            call_type=LLMCallType.CONVERSATION,  # sentinel for "all"
+            request_count=count,
+            total_input_tokens=total_in,
+            total_output_tokens=total_out,
+            total_tokens=total_tok,
+            total_latency_ms=total_lat,
+            avg_latency_ms=avg_lat,
+        )
+
+    def clear(self) -> None:
+        """Remove all call records."""
+        with self._lock:
+            self._records.clear()
+
+
 __all__ = [
     "OperationLog",
     "RetrievalLog",
     "ProcessingHistory",
     "EventBus",
+    "LLMUsageTracker",
 ]
