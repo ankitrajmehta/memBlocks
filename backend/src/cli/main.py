@@ -62,6 +62,51 @@ async def save_transparency_data(client: MemBlocksClient) -> None:
         with open(history_file, "w") as f:
             json.dump(runs_data, f, indent=2, default=str)
 
+    usage_tracker = client.get_llm_usage()
+    summary = usage_tracker.get_summary()
+    totals = usage_tracker.get_totals()
+    if totals.request_count > 0:
+        usage_data = {
+            "summary": {k: v.model_dump(mode="json") for k, v in summary.items()},
+            "totals": totals.model_dump(mode="json"),
+        }
+        usage_file = LOG_DIR / "llm_usage.json"
+        with open(usage_file, "w") as f:
+            json.dump(usage_data, f, indent=2, default=str)
+
+
+def display_token_usage(client: MemBlocksClient) -> None:
+    """Display a summary of token usage and costs."""
+    usage_tracker = client.get_llm_usage()
+    summary = usage_tracker.get_summary()
+    totals = usage_tracker.get_totals()
+
+    if not summary and totals.request_count == 0:
+        return
+
+    print("\n" + "─" * 70)
+    print("💰 LLM TOKEN USAGE SUMMARY")
+    print("─" * 70)
+    print(
+        f"{'Call Type':<20} | {'Reqs':>4} | {'In':>8} | {'Out':>8} | {'Total':>8} | {'Avg Lat':>8}"
+    )
+    print("-" * 70)
+
+    for call_type, stats in summary.items():
+        print(
+            f"{call_type:<20} | {stats.request_count:>4} | "
+            f"{stats.total_input_tokens:>8} | {stats.total_output_tokens:>8} | "
+            f"{stats.total_tokens:>8} | {stats.avg_latency_ms:>7.0f}ms"
+        )
+
+    print("-" * 70)
+    print(
+        f"{'GRAND TOTAL':<20} | {totals.request_count:>4} | "
+        f"{totals.total_input_tokens:>8} | {totals.total_output_tokens:>8} | "
+        f"{totals.total_tokens:>8} | {totals.avg_latency_ms:>7.0f}ms"
+    )
+    print("─" * 70 + "\n")
+
 
 def display_retrieval_summary(client: MemBlocksClient) -> None:
     """Display a summary of the last retrieval with enhanced info."""
@@ -128,7 +173,7 @@ async def _run_cli() -> None:
         config = MemBlocksConfig(llm_settings=LLMSettings(
                 default=LLMTaskSettings(
                     provider="groq",
-                    model="meta-llama/llama-4-maverick-17b-128e-instruct"
+                    model="moonshotai/kimi-k2-instruct-0905"
                 ),
                 retrieval=LLMTaskSettings(
                     provider="groq",
@@ -140,7 +185,7 @@ async def _run_cli() -> None:
                 ),
                 ps2_conflict_resolution=LLMTaskSettings(
                     provider="groq",
-                    model="meta-llama/llama-4-maverick-17b-128e-instruct"
+                    model="moonshotai/kimi-k2-instruct-0905"
                 ),
                 core_memory_extraction=LLMTaskSettings(
                     provider="groq",
@@ -202,6 +247,11 @@ async def _run_cli() -> None:
                     _last_retrieval_timestamp = getattr(last, "timestamp", None)
                     # Display immediately since save is async
                     display_retrieval_summary(client)
+
+        if event_name == "on_pipeline_completed":
+            asyncio.create_task(save_transparency_data(client))
+            print("\n✅ Memory pipeline completed.")
+            display_token_usage(client)
 
     events = [
         "on_memory_extracted",
@@ -271,6 +321,7 @@ async def _run_cli() -> None:
     print("💬 Chat with your assistant")
     print("   Type 'quit' to exit")
     print("   Type 'logs' to view latest retrieval details")
+    print("   Type 'tokens' to view cumulative LLM usage")
     print("=" * 70 + "\n")
 
     try:
@@ -288,6 +339,11 @@ async def _run_cli() -> None:
             # Special command to show retrieval logs
             if user_input.lower() == "logs":
                 display_retrieval_summary(client)
+                display_token_usage(client)
+                continue
+
+            if user_input.lower() == "tokens":
+                display_token_usage(client)
                 continue
 
             try:
@@ -339,6 +395,7 @@ async def _run_cli() -> None:
     finally:
         print("\n💾 Flushing final transparency data...")
         await save_transparency_data(client)
+        display_token_usage(client)
         print("🔌 Closing connections...")
         await client.close()
         print("\n👋 Goodbye!\n")

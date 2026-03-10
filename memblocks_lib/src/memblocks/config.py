@@ -256,7 +256,7 @@ class MemBlocksConfig(BaseSettings):
         description="Enable query expansion with related terms.",
     )
     retrieval_enable_hypothetical_paragraphs: bool = Field(
-        True,
+        False,
         validation_alias="RETRIEVAL_ENABLE_HYPOTHETICAL_PARAGRAPHS",
         description="Enable hypothetical paragraph generation for retrieval.",
     )
