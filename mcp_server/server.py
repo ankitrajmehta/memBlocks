@@ -213,6 +213,154 @@ async def memblocks_set_block(params: SetBlockInput, ctx: Context) -> str:
     )
 
 
+# --- Tool 4 — memblocks_store_semantic ---
+class StoreSemanticInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    fact: str = Field(
+        ...,
+        description="The fact or knowledge to store in semantic memory",
+        min_length=1,
+    )
+
+
+@mcp.tool(
+    name="memblocks_store_semantic",
+    annotations={
+        "title": "Store to Semantic Memory",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+)
+async def memblocks_store_semantic(params: StoreSemanticInput, ctx: Context) -> str:
+    """Store a fact or knowledge to semantic memory.
+
+    This tool wraps the input as a user message, then runs it through PS1
+    (extraction) and PS2 (conflict resolution) pipelines. Useful for persisting
+    facts, learned information, or knowledge that should be retrievable.
+
+    Input:
+      - fact (str): Plain text fact or knowledge to store
+
+    Returns a JSON object with:
+      - message (str): Success confirmation
+      - count (int): Number of semantic memory units stored
+      - operations (list): List of operations performed (ADD/UPDATE/DELETE)
+    """
+    client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
+
+    # Check for active block
+    block_id, error = _active_block_id_or_error()
+    if error:
+        return json.dumps({"error": error})
+
+    # Get the block
+    block = await client.get_block(block_id)
+    if block is None:
+        return json.dumps({"error": f"Block '{block_id}' not found."})
+
+    # Wrap fact as messages for PS1 extraction
+    messages = [{"role": "user", "content": params.fact}]
+
+    # PS1: Extract semantic memories
+    extracted = await block._semantic.extract(messages)
+
+    # PS2: Store each memory with conflict resolution
+    operations = []
+    for memory in extracted:
+        ops = await block._semantic.store(memory)
+        operations.extend(ops)
+
+    return json.dumps(
+        {
+            "message": "Stored to semantic memory",
+            "count": len(extracted),
+            "operations": [
+                {"type": op.operation_type.value, "memory_id": str(op.memory_id)}
+                for op in operations
+            ],
+        },
+        indent=2,
+    )
+
+
+# --- Tool 5 — memblocks_store_to_core ---
+class StoreToCoreInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    fact: str = Field(
+        ...,
+        description="The fact or knowledge to add/update in core memory",
+        min_length=1,
+    )
+
+
+@mcp.tool(
+    name="memblocks_store_to_core",
+    annotations={
+        "title": "Store to Core Memory",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+)
+async def memblocks_store_to_core(params: StoreToCoreInput, ctx: Context) -> str:
+    """Store a fact or knowledge to core memory.
+
+    This tool gets the existing core memory, combines it with the new fact
+    using the LLM-driven extraction pipeline, and saves the updated core memory.
+    Useful for updating persona information, human details, or core knowledge.
+
+    Input:
+      - fact (str): Plain text fact or knowledge to add/update in core memory
+
+    Returns a JSON object with:
+      - message (str): Success confirmation
+      - persona_preview (str): First 100 chars of updated persona content
+      - human_preview (str): First 100 chars of updated human content
+    """
+    client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
+
+    # Check for active block
+    block_id, error = _active_block_id_or_error()
+    if error:
+        return json.dumps({"error": error})
+
+    # Get the block
+    block = await client.get_block(block_id)
+    if block is None:
+        return json.dumps({"error": f"Block '{block_id}' not found."})
+
+    # Determine core_block_id (use dedicated core memory block if exists, otherwise block id)
+    core_block_id = block.core_memory_block_id or block.id
+
+    # Get existing core memory
+    old_core = await block._core.get(core_block_id)
+
+    # Wrap fact as messages for extraction
+    messages = [{"role": "user", "content": params.fact}]
+
+    # Extract new core memory by combining old + new via LLM
+    new_core = await block._core.extract(messages, old_core)
+
+    # Save updated core memory
+    await block._core.save(core_block_id, new_core)
+
+    return json.dumps(
+        {
+            "message": "Core memory updated",
+            "persona_preview": new_core.persona_content[:100]
+            if new_core.persona_content
+            else "",
+            "human_preview": new_core.human_content[:100]
+            if new_core.human_content
+            else "",
+        },
+        indent=2,
+    )
+
+
 # --- Entry point ---
 def main() -> None:
     """Entry point for `memblocks-mcp` CLI command."""
