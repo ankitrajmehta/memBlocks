@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 [tool.uv.workspace]
-members = ["memblocks_lib", "backend"]
+members = ["memblocks_lib", "backend", "mcp_server"]
 
 [tool.uv.sources]
 memblocks = { workspace = true }
