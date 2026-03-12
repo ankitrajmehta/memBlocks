@@ -20,7 +20,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 
 - [x] **Phase 1: Foundation** — MCP server scaffold, singleton client, active block state, block management tools
 - [x] **Phase 2.01: Store Semantic & Core** — Semantic store (PS1+PS2) and core store (LLM update) tools
-- [ ] **Phase 2.02: Store Combined** — Combined store tool for single-call semantic+core
+- [x] **Phase 2.02: Store Combined** — Combined store tool for single-call semantic+core
 - [ ] **Phase 3: Retrieve Tools** — Semantic retrieve, core retrieve, and combined retrieve via MCP
 - [ ] **Phase 4: CLI + Resources** — Block-switching CLI commands and MCP agent-readable resources
 
@@ -76,7 +76,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Foundation | v1.1 | 1/1 | Complete | 2026-03-12 |
-| 2. Store Tools | v1.1 | 1/2 | In Progress | 2026-03-13 |
+| 2. Store Tools | v1.1 | 2/2 | Complete | 2026-03-13 |
 | 3. Retrieve Tools | v1.1 | 0/? | Not started | - |
 | 4. CLI + Resources | v1.1 | 0/? | Not started | - |
 
