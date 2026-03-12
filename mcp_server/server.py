@@ -361,6 +361,105 @@ async def memblocks_store_to_core(params: StoreToCoreInput, ctx: Context) -> str
     )
 
 
+# --- Tool 6 — memblocks_store (STOR-03) ---
+class StoreInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    fact: str = Field(
+        ...,
+        description="The fact or knowledge to store in both semantic and core memory",
+        min_length=1,
+    )
+
+
+@mcp.tool(
+    name="memblocks_store",
+    annotations={
+        "title": "Store to Both Memories",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+)
+async def memblocks_store(params: StoreInput, ctx: Context) -> str:
+    """Store a fact or knowledge to both semantic and core memory in a single call.
+
+    This is a convenience tool that runs both the semantic storage pipeline
+    (PS1 extraction + PS2 conflict resolution) and the core memory update
+    pipeline (LLM extraction + save) sequentially. Use this when you want
+    to persist a fact to both memory systems without making two separate calls.
+
+    Input:
+      - fact (str): Plain text fact or knowledge to store
+
+    Returns a JSON object with:
+      - message (str): Success confirmation
+      - semantic (dict): Results from semantic storage (count, operations)
+      - core (dict): Results from core memory update (updated, previews)
+    """
+    client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
+
+    # Check for active block
+    block_id, error = _active_block_id_or_error()
+    if error:
+        return json.dumps({"error": error})
+
+    # Get the block
+    block = await client.get_block(block_id)
+    if block is None:
+        return json.dumps({"error": f"Block '{block_id}' not found."})
+
+    # Wrap fact as messages for both extractions
+    messages = [{"role": "user", "content": params.fact}]
+
+    # === Semantic Pipeline (PS1 + PS2) ===
+    # PS1: Extract semantic memories
+    extracted = await block._semantic.extract(messages)
+
+    # PS2: Store each memory with conflict resolution
+    semantic_operations = []
+    for memory in extracted:
+        ops = await block._semantic.store(memory)
+        semantic_operations.extend(ops)
+
+    # === Core Pipeline ===
+    # Determine core_block_id (use dedicated core memory block if exists, otherwise block id)
+    core_block_id = block.core_memory_block_id or block.id
+
+    # Get existing core memory
+    old_core = await block._core.get(core_block_id)
+
+    # Extract new core memory by combining old + new via LLM
+    new_core = await block._core.extract(messages, old_core)
+
+    # Save updated core memory
+    await block._core.save(core_block_id, new_core)
+
+    # Return combined result
+    return json.dumps(
+        {
+            "message": "Stored to both semantic and core memory",
+            "semantic": {
+                "count": len(extracted),
+                "operations": [
+                    {"type": op.operation_type.value, "memory_id": str(op.memory_id)}
+                    for op in semantic_operations
+                ],
+            },
+            "core": {
+                "updated": True,
+                "persona_preview": new_core.persona_content[:100]
+                if new_core.persona_content
+                else "",
+                "human_preview": new_core.human_content[:100]
+                if new_core.human_content
+                else "",
+            },
+        },
+        indent=2,
+    )
+
+
 # --- Entry point ---
 def main() -> None:
     """Entry point for `memblocks-mcp` CLI command."""
