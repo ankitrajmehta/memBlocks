@@ -83,25 +83,25 @@ Explicitly excluded. Documented to prevent scope creep.
 
 Which phases cover which requirements. Updated during roadmap creation.
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| FOUND-01 | Phase 1 | Pending |
-| FOUND-02 | Phase 1 | Pending |
-| FOUND-03 | Phase 1 | Pending |
-| FOUND-04 | Phase 1 | Pending |
-| FOUND-05 | Phase 1 | Pending |
-| BLCK-01 | Phase 1 | Pending |
-| BLCK-02 | Phase 1 | Pending |
-| STOR-01 | Phase 2 | Pending |
-| STOR-02 | Phase 2 | Pending |
-| STOR-03 | Phase 2 | Pending |
-| RETR-01 | Phase 3 | Pending |
-| RETR-02 | Phase 3 | Pending |
-| RETR-03 | Phase 3 | Pending |
-| CLI-01 | Phase 4 | Pending |
-| CLI-02 | Phase 4 | Pending |
-| RES-01 | Phase 4 | Pending |
-| RES-02 | Phase 4 | Pending |
+| Requirement | Phase | Phase Name | Status |
+|-------------|-------|------------|--------|
+| FOUND-01 | Phase 1 | Foundation | Pending |
+| FOUND-02 | Phase 1 | Foundation | Pending |
+| FOUND-03 | Phase 1 | Foundation | Pending |
+| FOUND-04 | Phase 1 | Foundation | Pending |
+| FOUND-05 | Phase 1 | Foundation | Pending |
+| BLCK-01 | Phase 1 | Foundation | Pending |
+| BLCK-02 | Phase 1 | Foundation | Pending |
+| STOR-01 | Phase 2 | Store Tools | Pending |
+| STOR-02 | Phase 2 | Store Tools | Pending |
+| STOR-03 | Phase 2 | Store Tools | Pending |
+| RETR-01 | Phase 3 | Retrieve Tools | Pending |
+| RETR-02 | Phase 3 | Retrieve Tools | Pending |
+| RETR-03 | Phase 3 | Retrieve Tools | Pending |
+| CLI-01 | Phase 4 | CLI + Resources | Pending |
+| CLI-02 | Phase 4 | CLI + Resources | Pending |
+| RES-01 | Phase 4 | CLI + Resources | Pending |
+| RES-02 | Phase 4 | CLI + Resources | Pending |
 
 **Coverage:**
 - v1.1 requirements: 17 total
