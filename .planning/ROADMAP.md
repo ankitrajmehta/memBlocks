@@ -18,7 +18,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 
 **Milestone Goal:** Any AI agent connected to MemBlocks can store and retrieve the right memory from the right block at the right time, with conflict resolution and source transparency.
 
-- [ ] **Phase 1: Foundation** — MCP server scaffold, singleton client, active block state, block management tools
+- [x] **Phase 1: Foundation** — MCP server scaffold, singleton client, active block state, block management tools
 - [ ] **Phase 2: Store Tools** — Semantic store, core store, and combined store via MCP
 - [ ] **Phase 3: Retrieve Tools** — Semantic retrieve, core retrieve, and combined retrieve via MCP
 - [ ] **Phase 4: CLI + Resources** — Block-switching CLI commands and MCP agent-readable resources
@@ -74,7 +74,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Foundation | v1.1 | 0/? | Not started | - |
+| 1. Foundation | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 2. Store Tools | v1.1 | 0/? | Not started | - |
 | 3. Retrieve Tools | v1.1 | 0/? | Not started | - |
 | 4. CLI + Resources | v1.1 | 0/? | Not started | - |
