@@ -45,7 +45,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
   1. Agent calls `memblocks_store_semantic` with a plain text fact; the fact appears in subsequent vector search results (PS1 extraction + PS2 conflict resolution ran)
   2. Agent calls `memblocks_store_to_core` with a plain text fact; core memory is updated and the change is visible on next core retrieval
   3. Agent calls `memblocks_store` with a plain text fact; the fact persists in both semantic and core memory in a single call
-**Plans**: TBD
+**Plans**: phase-2-01-PLAN.md, phase-2-02-PLAN.md
 
 ### Phase 3: Retrieve Tools
 **Goal**: Agent can retrieve the right context from the active memory block — combined, core-only, or semantic-only — formatted and ready for LLM injection
@@ -75,7 +75,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Foundation | v1.1 | 1/1 | Complete | 2026-03-12 |
-| 2. Store Tools | v1.1 | 0/? | Not started | - |
+| 2. Store Tools | v1.1 | 0/2 | Not started | - |
 | 3. Retrieve Tools | v1.1 | 0/? | Not started | - |
 | 4. CLI + Resources | v1.1 | 0/? | Not started | - |
 
