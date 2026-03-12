@@ -40,3 +40,4 @@ memblocks_lib\docs\TESTING_GUIDE.md
 verify_retrieval.py
 llm_usage.json
 .planning/
+.agents/
