@@ -75,18 +75,18 @@ class SemanticMemoryUnit(BaseModel):
         [], description="List of entities mentioned in the memory content."
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "content": "User attended the AI conference in San Francisco.",
-                "type": "event",
-                "confidence": 0.95,
-                "memory_time": "2023-11-15T10:00:00",
-                "entities": ["AI conference", "San Francisco"],
-                "keywords": ["AI conference", "San Francisco", "machine learning"],
-                "updated_at": "2023-11-16T12:00:00",
-            }
-        }
+    # class Config:
+    #     json_schema_extra = {
+    #         "example": {
+    #             "content": "User attended the AI conference in San Francisco.",
+    #             "type": "event",
+    #             "confidence": 0.95,
+    #             "memory_time": "2023-11-15T10:00:00",
+    #             "entities": ["AI conference", "San Francisco"],
+    #             "keywords": ["AI conference", "San Francisco", "machine learning"],
+    #             "updated_at": "2023-11-16T12:00:00",
+    #         }
+    #     }
 
 
 class CoreMemoryUnit(BaseModel):

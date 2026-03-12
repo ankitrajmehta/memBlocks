@@ -10,16 +10,16 @@ Requirements for the MCP Server milestone. Each maps to roadmap phases.
 
 ### Foundation
 
-- [ ] **FOUND-01**: MCP server runs as a standalone stdio process with a singleton MemBlocksClient initialized at startup via FastMCP lifespan
-- [ ] **FOUND-02**: Server reads user_id and MemBlocksConfig from environment variables / .env file on startup
-- [ ] **FOUND-03**: Active block state is persisted in a shared JSON state file (`~/.config/memblocks/active_block.json`)
-- [ ] **FOUND-04**: Any tool call returns a clear error message if no active block is set, without crashing the server
-- [ ] **FOUND-05**: MCP server entry point is registered in pyproject.toml and runnable as `memblocks-mcp`
+- [x] **FOUND-01**: MCP server runs as a standalone stdio process with a singleton MemBlocksClient initialized at startup via FastMCP lifespan
+- [x] **FOUND-02**: Server reads user_id and MemBlocksConfig from environment variables / .env file on startup
+- [x] **FOUND-03**: Active block state is persisted in a shared JSON state file (`~/.config/memblocks/active_block.json`)
+- [x] **FOUND-04**: Any tool call returns a clear error message if no active block is set, without crashing the server
+- [x] **FOUND-05**: MCP server entry point is registered in pyproject.toml and runnable as `memblocks-mcp`
 
 ### Block Management Tools
 
-- [ ] **BLCK-01**: Agent can list all blocks for the configured user via `memblocks_list_blocks` MCP tool, including which block is currently active
-- [ ] **BLCK-02**: Agent can create a new block with a name and optional description via `memblocks_create_block` MCP tool
+- [x] **BLCK-01**: Agent can list all blocks for the configured user via `memblocks_list_blocks` MCP tool, including which block is currently active
+- [x] **BLCK-02**: Agent can create a new block with a name and optional description via `memblocks_create_block` MCP tool
 
 ### Store Tools
 
