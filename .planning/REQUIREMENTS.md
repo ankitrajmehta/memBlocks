@@ -1,0 +1,113 @@
+# Requirements: MemBlocks MCP Server
+
+**Defined:** 2026-03-12
+**Milestone:** v1.1 — MCP Server
+**Core Value:** Any AI agent connected to MemBlocks can store and retrieve the right memory from the right block at the right time, with conflict resolution and source transparency.
+
+## v1.1 Requirements
+
+Requirements for the MCP Server milestone. Each maps to roadmap phases.
+
+### Foundation
+
+- [ ] **FOUND-01**: MCP server runs as a standalone stdio process with a singleton MemBlocksClient initialized at startup via FastMCP lifespan
+- [ ] **FOUND-02**: Server reads user_id and MemBlocksConfig from environment variables / .env file on startup
+- [ ] **FOUND-03**: Active block state is persisted in a shared JSON state file (`~/.config/memblocks/active_block.json`)
+- [ ] **FOUND-04**: Any tool call returns a clear error message if no active block is set, without crashing the server
+- [ ] **FOUND-05**: MCP server entry point is registered in pyproject.toml and runnable as `memblocks-mcp`
+
+### Block Management Tools
+
+- [ ] **BLCK-01**: Agent can list all blocks for the configured user via `memblocks_list_blocks` MCP tool, including which block is currently active
+- [ ] **BLCK-02**: Agent can create a new block with a name and optional description via `memblocks_create_block` MCP tool
+
+### Store Tools
+
+- [ ] **STOR-01**: Agent can store a fact to semantic memory via `memblocks_store_semantic`, which accepts plain text, runs LLM extraction (PS1) and conflict resolution (PS2)
+- [ ] **STOR-02**: Agent can update core memory via `memblocks_store_to_core`, which accepts plain text, wraps it as a message, and runs LLM core memory update
+- [ ] **STOR-03**: Agent can store to both semantic and core memory in one call via `memblocks_store`, which runs both pipelines sequentially
+
+### Retrieve Tools
+
+- [ ] **RETR-01**: Agent can retrieve relevant memories (core + semantic) for a query string via `memblocks_retrieve`, returning formatted context ready for LLM injection
+- [ ] **RETR-02**: Agent can retrieve only core memory (full, no query needed) via `memblocks_retrieve_core`
+- [ ] **RETR-03**: Agent can retrieve only semantic memories relevant to a query via `memblocks_retrieve_semantic`
+
+### CLI Commands
+
+- [ ] **CLI-01**: User can set the active block by block ID via `memblocks set-block <block_id>`, which writes to the shared state file
+- [ ] **CLI-02**: User can view the current active block (name, ID) via `memblocks get-block`
+
+### MCP Resources
+
+- [ ] **RES-01**: MCP resource `memblocks://active-block` exposes current block name, ID, and description so agents can read context without making a tool call
+- [ ] **RES-02**: MCP resource `memblocks://tools` exposes a usage guide documenting all available tools, their purpose, and when to use each
+
+## v2 Requirements
+
+Deferred to future release. Tracked but not in current roadmap.
+
+### Extended Memory Types
+
+- **EXT-01**: Agent can store and retrieve resource memories (documents, PDFs) via MCP tools
+- **EXT-02**: Resource chunking and embedding pipeline accessible via MCP
+
+### Multi-block Operations
+
+- **MULTI-01**: Agent can retrieve from multiple blocks simultaneously in a single call
+- **MULTI-02**: Agent can specify block ID per tool call instead of relying on active block state
+
+### Observability
+
+- **OBS-01**: MCP server exposes token usage and retrieval stats via a dedicated resource
+- **OBS-02**: Agent can query the operation log (what was stored/updated/deleted) via an MCP tool
+
+### Advanced Configuration
+
+- **ADV-01**: HTTP transport option for team/shared MCP server deployments
+- **ADV-02**: Per-agent namespacing within a shared block
+
+## Out of Scope
+
+Explicitly excluded. Documented to prevent scope creep.
+
+| Feature | Reason |
+|---------|--------|
+| Session / memory window / MemoryPipeline.run() | Agents push distilled facts, not full conversation history; no pipeline trigger needed |
+| OAuth / multi-user in MCP | Single-user per server instance; complexity without clear value for local use |
+| HTTP transport | stdio is sufficient for local clients; HTTP adds deployment complexity |
+| Resource memory (documents/PDFs) in MCP tools | Resource memory is a stub in the library; premature to expose |
+| Streaming MCP responses | Not needed for memory operations; all operations complete before returning |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| FOUND-01 | Phase 1 | Pending |
+| FOUND-02 | Phase 1 | Pending |
+| FOUND-03 | Phase 1 | Pending |
+| FOUND-04 | Phase 1 | Pending |
+| FOUND-05 | Phase 1 | Pending |
+| BLCK-01 | Phase 1 | Pending |
+| BLCK-02 | Phase 1 | Pending |
+| STOR-01 | Phase 2 | Pending |
+| STOR-02 | Phase 2 | Pending |
+| STOR-03 | Phase 2 | Pending |
+| RETR-01 | Phase 3 | Pending |
+| RETR-02 | Phase 3 | Pending |
+| RETR-03 | Phase 3 | Pending |
+| CLI-01 | Phase 4 | Pending |
+| CLI-02 | Phase 4 | Pending |
+| RES-01 | Phase 4 | Pending |
+| RES-02 | Phase 4 | Pending |
+
+**Coverage:**
+- v1.1 requirements: 17 total
+- Mapped to phases: 17
+- Unmapped: 0 ✓
+
+---
+*Requirements defined: 2026-03-12*
+*Last updated: 2026-03-12 after initial definition*
