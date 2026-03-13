@@ -15,6 +15,7 @@ from fastmcp import FastMCP, Context
 from pydantic import BaseModel, Field, ConfigDict
 
 from memblocks import MemBlocksClient, MemBlocksConfig
+from memblocks.llm.task_settings import LLMSettings, LLMTaskSettings
 from mcp_server.state import get_active_block_id, set_active_block_id
 
 # --- Logging setup ---
@@ -32,7 +33,34 @@ logger = logging.getLogger(__name__)
 async def app_lifespan(server: FastMCP):
     user_id = os.environ.get("MEMBLOCKS_USER_ID", "default_user")
     logger.info(f"Initializing MemBlocksClient for user: {user_id}")
-    config = MemBlocksConfig()
+    config = MemBlocksConfig(llm_settings=LLMSettings(
+                default=LLMTaskSettings(
+                    provider="groq",
+                    model="moonshotai/kimi-k2-instruct-0905"
+                ),
+                retrieval=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-20b"
+                ),
+                ps1_semantic_extraction=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-120b"
+                ),
+                ps2_conflict_resolution=LLMTaskSettings(
+                    provider="groq",
+                    model="moonshotai/kimi-k2-instruct-0905"
+                ),
+                core_memory_extraction=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-120b"
+                ),
+                recursive_summary=LLMTaskSettings(
+                    provider="groq",
+                    model="openai/gpt-oss-120b"
+                ),
+            )
+                                 
+        )
     client = MemBlocksClient(config)
     # Ensure user exists
     await client.get_or_create_user(user_id)
