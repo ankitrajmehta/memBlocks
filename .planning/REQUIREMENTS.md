@@ -25,7 +25,7 @@ Requirements for the MCP Server milestone. Each maps to roadmap phases.
 
 - [ ] **STOR-01**: Agent can store a fact to semantic memory via `memblocks_store_semantic`, which accepts plain text, runs LLM extraction (PS1) and conflict resolution (PS2)
 - [ ] **STOR-02**: Agent can update core memory via `memblocks_store_to_core`, which accepts plain text, wraps it as a message, and runs LLM core memory update
-- [ ] **STOR-03**: Agent can store to both semantic and core memory in one call via `memblocks_store`, which runs both pipelines sequentially
+- [x] **STOR-03**: Agent can store to both semantic and core memory in one call via `memblocks_store`, which runs both pipelines sequentially
 
 ### Retrieve Tools
 
