@@ -29,9 +29,9 @@ Requirements for the MCP Server milestone. Each maps to roadmap phases.
 
 ### Retrieve Tools
 
-- [ ] **RETR-01**: Agent can retrieve relevant memories (core + semantic) for a query string via `memblocks_retrieve`, returning formatted context ready for LLM injection
-- [ ] **RETR-02**: Agent can retrieve only core memory (full, no query needed) via `memblocks_retrieve_core`
-- [ ] **RETR-03**: Agent can retrieve only semantic memories relevant to a query via `memblocks_retrieve_semantic`
+- [x] **RETR-01**: Agent can retrieve relevant memories (core + semantic) for a query string via `memblocks_retrieve`, returning formatted context ready for LLM injection
+- [x] **RETR-02**: Agent can retrieve only core memory (full, no query needed) via `memblocks_retrieve_core`
+- [x] **RETR-03**: Agent can retrieve only semantic memories relevant to a query via `memblocks_retrieve_semantic`
 
 ### CLI Commands
 
@@ -95,9 +95,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STOR-01 | Phase 2 | Store Tools | Pending |
 | STOR-02 | Phase 2 | Store Tools | Pending |
 | STOR-03 | Phase 2 | Store Tools | Pending |
-| RETR-01 | Phase 3 | Retrieve Tools | Pending |
-| RETR-02 | Phase 3 | Retrieve Tools | Pending |
-| RETR-03 | Phase 3 | Retrieve Tools | Pending |
+| RETR-01 | Phase 3 | Retrieve Tools | Complete |
+| RETR-02 | Phase 3 | Retrieve Tools | Complete |
+| RETR-03 | Phase 3 | Retrieve Tools | Complete |
 | CLI-01 | Phase 4 | CLI + Resources | Pending |
 | CLI-02 | Phase 4 | CLI + Resources | Pending |
 | RES-01 | Phase 4 | CLI + Resources | Pending |
