@@ -67,7 +67,11 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
   2. User runs `memblocks get-block` and sees the current active block name and ID
   3. Agent reads the `memblocks://active-block` MCP resource and receives the current block name, ID, and description without calling any tool
   4. Agent reads the `memblocks://tools` MCP resource and receives a human-readable usage guide listing all available tools, their purpose, and when to use each
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — CLI commands: `memblocks set-block` and `memblocks get-block`
+- [ ] 04-02-PLAN.md — MCP resources: `memblocks://active-block` and `memblocks://tools`
 
 ## Progress
 
@@ -78,7 +82,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 | 1. Foundation | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 2. Store Tools | v1.1 | 2/2 | Complete | 2026-03-13 |
 | 3. Retrieve Tools | v1.1 | 1/1 | Complete | 2026-03-14 |
-| 4. CLI + Resources | v1.1 | 0/? | Not started | - |
+| 4. CLI + Resources | v1.1 | 0/2 | Not started | - |
 
 ---
 *Roadmap created: 2026-03-12*
