@@ -70,7 +70,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — CLI commands: `memblocks set-block` and `memblocks get-block`
+- [x] 04-01-PLAN.md — CLI commands: `memblocks set-block` and `memblocks get-block` (Complete: 2026-03-14)
 - [ ] 04-02-PLAN.md — MCP resources: `memblocks://active-block` and `memblocks://tools`
 
 ## Progress
@@ -82,7 +82,7 @@ Plans:
 | 1. Foundation | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 2. Store Tools | v1.1 | 2/2 | Complete | 2026-03-13 |
 | 3. Retrieve Tools | v1.1 | 1/1 | Complete | 2026-03-14 |
-| 4. CLI + Resources | v1.1 | 0/2 | Not started | - |
+| 4. CLI + Resources | v1.1 | 1/2 | In Progress | - |
 
 ---
 *Roadmap created: 2026-03-12*
