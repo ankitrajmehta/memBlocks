@@ -47,45 +47,107 @@ class TestStateLayer:
             state.STATE_FILE = original_state_file
 
 
-# CLI tests - cli.py doesn't exist yet, so these are stubs/skip for Wave 0
+# CLI tests - now with cli.py implemented
 
 
 class TestCLISetBlock:
     """Test CLI set-block command."""
 
-    def test_set_block_writes_state_and_exits_zero(self, tmp_path):
+    def test_set_block_writes_state_and_exits_zero(self, tmp_path, monkeypatch):
         """Test: CLI set-block <block_id> writes state and exits 0."""
-        # cli.py doesn't exist yet - skip until implemented
-        pytest.skip("cli.py not yet implemented")
+        from mcp_server import state, cli
 
-    def test_set_block_no_block_id_prints_usage_error(self, tmp_path):
+        original_state_file = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+
+        try:
+            # Capture exit code
+            exit_code = None
+            monkeypatch.setattr(sys, "argv", ["memblocks", "set-block", "abc123"])
+
+            try:
+                cli.main()
+            except SystemExit as e:
+                exit_code = e.code
+
+            assert exit_code == 0
+            # Verify state file was written
+            assert state.get_active_block_id() == "abc123"
+        finally:
+            state.STATE_FILE = original_state_file
+
+    def test_set_block_no_block_id_prints_usage_error(self, tmp_path, monkeypatch):
         """Test: CLI set-block with no block_id prints usage error and exits 1."""
-        pytest.skip("cli.py not yet implemented")
+        from mcp_server import state, cli
 
-    def test_set_block_command_via_subprocess(self, tmp_path):
-        """Test: CLI set-block via subprocess.run."""
-        pytest.skip("cli.py not yet implemented")
+        original_state_file = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+
+        try:
+            monkeypatch.setattr(sys, "argv", ["memblocks", "set-block"])
+
+            with pytest.raises(SystemExit) as exc_info:
+                cli.main()
+
+            assert exc_info.value.code in (1, 2)  # argparse returns 2 for errors
+        finally:
+            state.STATE_FILE = original_state_file
 
 
 class TestCLIGetBlock:
     """Test CLI get-block command."""
 
-    def test_get_block_prints_active_block(self, tmp_path):
+    def test_get_block_prints_active_block(self, tmp_path, capsys, monkeypatch):
         """Test: CLI get-block prints 'Active block: {block_id}' when state is set."""
-        pytest.skip("cli.py not yet implemented")
+        from mcp_server import state, cli
 
-    def test_get_block_prints_no_block_when_empty(self, tmp_path):
+        original_state_file = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+
+        try:
+            # First set a block
+            state.set_active_block_id("xyz789")
+
+            # Now run get-block - expect sys.exit(0)
+            monkeypatch.setattr(sys, "argv", ["memblocks", "get-block"])
+            with pytest.raises(SystemExit):
+                cli.main()
+
+            captured = capsys.readouterr()
+            assert "Active block: xyz789" in captured.out
+        finally:
+            state.STATE_FILE = original_state_file
+
+    def test_get_block_prints_no_block_when_empty(self, tmp_path, capsys, monkeypatch):
         """Test: CLI get-block prints 'No active block set.' when state file is empty."""
-        pytest.skip("cli.py not yet implemented")
+        from mcp_server import state, cli
 
-    def test_get_block_via_subprocess(self, tmp_path):
-        """Test: CLI get-block via subprocess.run."""
-        pytest.skip("cli.py not yet implemented")
+        original_state_file = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "nonexistent.json"
+
+        try:
+            monkeypatch.setattr(sys, "argv", ["memblocks", "get-block"])
+            with pytest.raises(SystemExit):
+                cli.main()
+
+            captured = capsys.readouterr()
+            assert "No active block set." in captured.out
+        finally:
+            state.STATE_FILE = original_state_file
 
 
 class TestCLIHelp:
     """Test CLI help."""
 
-    def test_help_shows_subcommands(self, tmp_path):
+    def test_help_shows_subcommands(self, capsys, monkeypatch):
         """Test: CLI --help shows available subcommands."""
-        pytest.skip("cli.py not yet implemented")
+        from mcp_server import cli
+
+        monkeypatch.setattr(sys, "argv", ["memblocks", "--help"])
+
+        with pytest.raises(SystemExit):
+            cli.main()
+
+        captured = capsys.readouterr()
+        assert "set-block" in captured.out
+        assert "get-block" in captured.out

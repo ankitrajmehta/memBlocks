@@ -10,6 +10,7 @@ dependencies = [
 
 [project.scripts]
 memblocks-mcp = "mcp_server.server:main"
+memblocks-cli = "mcp_server.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -17,3 +18,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["mcp_server"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
