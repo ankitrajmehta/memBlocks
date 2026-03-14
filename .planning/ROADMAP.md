@@ -56,7 +56,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
   1. Agent calls `memblocks_retrieve` with a query string; returned string contains relevant memories from both core and semantic sources, formatted for direct LLM injection
   2. Agent calls `memblocks_retrieve_core` with no query; returned string contains the full core memory contents of the active block
   3. Agent calls `memblocks_retrieve_semantic` with a query string; returned string contains only semantically relevant memories (no core) for the active block
-**Plans**: TBD
+**Plans**: 03-01-PLAN.md — Retrieve tools implementation
 
 ### Phase 4: CLI + Resources
 **Goal**: User can switch the active block from the terminal, and agents can read block context and tool documentation without making a tool call
@@ -77,7 +77,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 |-------|-----------|----------------|--------|-----------|
 | 1. Foundation | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 2. Store Tools | v1.1 | 2/2 | Complete | 2026-03-13 |
-| 3. Retrieve Tools | v1.1 | 0/? | Not started | - |
+| 3. Retrieve Tools | v1.1 | 1/? | Not started | - |
 | 4. CLI + Resources | v1.1 | 0/? | Not started | - |
 
 ---
