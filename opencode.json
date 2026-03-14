@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "memblocks": {
+      "type": "local",
+      "command": ["uv","run", "python", "-m", "mcp_server.server"],
+      "environment": {
+        "MEMBLOCKS_USER_ID": "1234"
+      },
+      "enabled": true
+    }
+  }
+}
