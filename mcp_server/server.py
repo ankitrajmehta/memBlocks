@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastmcp import FastMCP, Context
+from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field, ConfigDict
 
 from memblocks import MemBlocksClient, MemBlocksConfig
@@ -104,9 +105,37 @@ async def app_lifespan(server: FastMCP):
     client = MemBlocksClient(config)
     # Ensure user exists
     await client.get_or_create_user(user_id)
-    # Write user_id to shared state file so the CLI can resolve it without
-    # duplicating environment variable / config file lookup logic.
+    # Persist user_id for components that share this state file.
     set_user_id(user_id)
+
+    # Ensure there is always an active block for this user.
+    active_id = get_active_block_id()
+    active_block = None
+    if active_id:
+        active_block = await client.get_block(active_id)
+        if active_block is None or active_block.user_id != user_id:
+            logger.warning(
+                "Active block %s is missing or belongs to another user; selecting a default block",
+                active_id,
+            )
+            active_block = None
+
+    if active_block is None:
+        blocks = await client.get_user_blocks(user_id)
+        if blocks:
+            active_block = blocks[0]
+            logger.info(
+                "Selected existing block as active default: %s", active_block.id
+            )
+        else:
+            active_block = await client.create_block(
+                user_id=user_id,
+                name="Default Memory",
+                description="Auto-created default memory block for agent sessions",
+            )
+            logger.info("Created default active block: %s", active_block.id)
+        set_active_block_id(active_block.id)
+
     logger.info(f"MemBlocksClient ready — user_id written to state file")
     yield {"client": client, "user_id": user_id}
     logger.info("Shutting down MemBlocksClient")
@@ -122,7 +151,7 @@ def _active_block_id_or_error() -> tuple[str | None, str | None]:
     block_id = get_active_block_id()
     if not block_id:
         return None, (
-            "Error: No active block is set. "
+            "No active block is set. "
             "Call `memblocks_list_blocks` to see available blocks, "
             "then call `memblocks_set_block` with the desired block ID to activate one."
         )
@@ -202,8 +231,8 @@ async def memblocks_create_block(params: CreateBlockInput, ctx: Context) -> str:
     """Create a new memory block for the configured user.
 
     Creates a block with semantic and core memory collections initialized.
-    The new block is NOT automatically set as active — call `memblocks set-block`
-    to activate it.
+    The new block is NOT automatically set as active — call
+    `memblocks_set_block` with the returned block ID to activate it.
 
     Returns a JSON object with the created block's details:
       - id (str): new block ID
@@ -214,14 +243,9 @@ async def memblocks_create_block(params: CreateBlockInput, ctx: Context) -> str:
     logger.info(f"memblocks_create_block: name={params.name!r}")
 
     if get_mcp_lock():
-        logger.warning("memblocks_create_block: blocked — MCP is locked by CLI")
-        return json.dumps(
-            {
-                "error": (
-                    "MCP is locked: block creation is not permitted. "
-                    "Run 'memblocks-cli unlock' to restore permissions."
-                )
-            }
+        logger.warning("memblocks_create_block: blocked — MCP lock enabled")
+        raise ToolError(
+            "MCP lock is enabled: block creation is not permitted for this session."
         )
 
     client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
@@ -236,7 +260,10 @@ async def memblocks_create_block(params: CreateBlockInput, ctx: Context) -> str:
         "id": block.id,
         "name": block.name,
         "description": block.description,
-        "message": f"Block '{block.name}' created successfully. Use `memblocks set-block {block.id}` to activate it.",
+        "message": (
+            f"Block '{block.name}' created successfully. "
+            f"Call `memblocks_set_block` with block_id='{block.id}' to activate it."
+        ),
     }
     logger.info(f"memblocks_create_block: created block id={block.id}")
     return json.dumps(result, indent=2)
@@ -267,7 +294,7 @@ async def memblocks_set_block(params: SetBlockInput, ctx: Context) -> str:
 
     Validates that the block exists and belongs to the configured user before
     activating it. The active block ID is persisted to
-    ~/.config/memblocks/active_block.json so the CLI and other tools share state.
+    ~/.config/memblocks/active_block.json so connected clients share state.
 
     Returns a JSON object with:
       - block_id (str): the newly activated block ID
@@ -277,14 +304,9 @@ async def memblocks_set_block(params: SetBlockInput, ctx: Context) -> str:
     logger.info(f"memblocks_set_block: block_id={params.block_id!r}")
 
     if get_mcp_lock():
-        logger.warning("memblocks_set_block: blocked — MCP is locked by CLI")
-        return json.dumps(
-            {
-                "error": (
-                    "MCP is locked: switching blocks is not permitted. "
-                    "Run 'memblocks-cli unlock' to restore permissions."
-                )
-            }
+        logger.warning("memblocks_set_block: blocked — MCP lock enabled")
+        raise ToolError(
+            "MCP lock is enabled: switching active blocks is not permitted for this session."
         )
 
     client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
@@ -293,18 +315,16 @@ async def memblocks_set_block(params: SetBlockInput, ctx: Context) -> str:
     block = await client.get_block(params.block_id)
     if block is None:
         logger.warning(f"memblocks_set_block: block not found: {params.block_id}")
-        return json.dumps(
-            {
-                "error": f"Block '{params.block_id}' not found. "
-                "Call `memblocks_list_blocks` to see available block IDs."
-            }
+        raise ToolError(
+            f"Block '{params.block_id}' not found. "
+            "Call `memblocks_list_blocks` to see available block IDs."
         )
     if block.user_id != user_id:
         logger.warning(
             f"memblocks_set_block: block {params.block_id} belongs to {block.user_id}, not {user_id}"
         )
-        return json.dumps(
-            {"error": f"Block '{params.block_id}' does not belong to the current user."}
+        raise ToolError(
+            f"Block '{params.block_id}' does not belong to the current user."
         )
 
     set_active_block_id(params.block_id)
@@ -340,11 +360,24 @@ class StoreSemanticInput(BaseModel):
     },
 )
 async def memblocks_store_semantic(params: StoreSemanticInput, ctx: Context) -> str:
-    """Store a fact or knowledge to semantic memory.
+    """Store a fact or knowledge to semantic memory (searchable via vector search).
 
-    This tool wraps the input as a user message, then runs it through PS1
-    (extraction) and PS2 (conflict resolution) pipelines. Useful for persisting
-    facts, learned information, or knowledge that should be retrievable.
+    PREFER `memblocks_store` OVER THIS TOOL:
+    Unless you specifically need semantic-only storage, call `memblocks_store`
+    instead — it stores to both semantic and core memory in one call and is the
+    recommended default.
+
+    PROACTIVE STORAGE — MANDATORY BEHAVIOR:
+    You MUST call a store tool proactively whenever a conversation turn contains
+    information worth remembering, WITHOUT waiting for the user to ask you to save it.
+
+    Use this tool specifically for factual, topic-retrievable knowledge:
+      - Technical facts, code patterns, or implementation details
+      - Domain knowledge or research findings from the conversation
+      - Task-specific data (e.g. API keys discussed, endpoints found, configs)
+      - Any fact best retrieved by topic keyword in a future session
+
+    Runs the input through PS1 (extraction) and PS2 (conflict resolution) pipelines.
 
     Input:
       - fact (str): Plain text fact or knowledge to store
@@ -361,13 +394,13 @@ async def memblocks_store_semantic(params: StoreSemanticInput, ctx: Context) -> 
     block_id, error = _active_block_id_or_error()
     if error:
         logger.warning(f"memblocks_store_semantic: no active block — {error}")
-        return json.dumps({"error": error})
+        raise ToolError(error)
 
     # Get the block
     block = await client.get_block(block_id)
     if block is None:
         logger.warning(f"memblocks_store_semantic: block not found: {block_id}")
-        return json.dumps({"error": f"Block '{block_id}' not found."})
+        raise ToolError(f"Block '{block_id}' not found.")
 
     # Wrap fact as messages for PS1 extraction
     messages = [{"role": "user", "content": params.fact}]
@@ -423,11 +456,25 @@ class StoreToCoreInput(BaseModel):
     },
 )
 async def memblocks_store_to_core(params: StoreToCoreInput, ctx: Context) -> str:
-    """Store a fact or knowledge to core memory.
+    """Store a fact or knowledge to core memory (always-on persona and human context).
 
-    This tool gets the existing core memory, combines it with the new fact
-    using the LLM-driven extraction pipeline, and saves the updated core memory.
-    Useful for updating persona information, human details, or core knowledge.
+    PREFER `memblocks_store` OVER THIS TOOL:
+    Unless you specifically need core-only storage, call `memblocks_store`
+    instead — it stores to both semantic and core memory in one call and is the
+    recommended default.
+
+    PROACTIVE STORAGE — MANDATORY BEHAVIOR:
+    You MUST call a store tool proactively whenever a conversation turn contains
+    information worth remembering, WITHOUT waiting for the user to ask you to save it.
+
+    Use this tool specifically for stable, identity-level facts about the user:
+      - The user's name, role, location, or organization
+      - Long-term goals or ongoing projects
+      - Persistent preferences about how the user wants you to behave
+      - Any fact that should always be present in every future conversation
+
+    Gets existing core memory, combines it with the new fact via LLM extraction,
+    and saves the updated core memory (persona + human sections).
 
     Input:
       - fact (str): Plain text fact or knowledge to add/update in core memory
@@ -444,13 +491,13 @@ async def memblocks_store_to_core(params: StoreToCoreInput, ctx: Context) -> str
     block_id, error = _active_block_id_or_error()
     if error:
         logger.warning(f"memblocks_store_to_core: no active block — {error}")
-        return json.dumps({"error": error})
+        raise ToolError(error)
 
     # Get the block
     block = await client.get_block(block_id)
     if block is None:
         logger.warning(f"memblocks_store_to_core: block not found: {block_id}")
-        return json.dumps({"error": f"Block '{block_id}' not found."})
+        raise ToolError(f"Block '{block_id}' not found.")
 
     # Determine core_block_id
     core_block_id = block.core_memory_block_id or block.id
@@ -513,10 +560,32 @@ class StoreInput(BaseModel):
 async def memblocks_store(params: StoreInput, ctx: Context) -> str:
     """Store a fact or knowledge to both semantic and core memory in a single call.
 
-    This is a convenience tool that runs both the semantic storage pipeline
-    (PS1 extraction + PS2 conflict resolution) and the core memory update
-    pipeline (LLM extraction + save) sequentially. Use this when you want
-    to persist a fact to both memory systems without making two separate calls.
+    THIS IS THE DEFAULT STORE TOOL. When in doubt about which store tool to use,
+    always call this one — it covers both semantic and core memory in one call.
+
+    PROACTIVE STORAGE — MANDATORY BEHAVIOR:
+    You MUST call this tool proactively whenever a conversation turn contains
+    information worth remembering, WITHOUT waiting for the user to ask you to save it.
+    Storing memory is part of being a good assistant. Never skip storage because the
+    user did not explicitly say "remember this."
+
+    ALWAYS call this tool when you encounter ANY of the following:
+      - User preferences, opinions, or personal style choices
+      - Facts about the user (name, role, location, background, skills)
+      - Project names, goals, tech stack, architecture, or constraints
+      - Decisions made or conclusions reached during the conversation
+      - Task outcomes: code written, bugs fixed, configurations set
+      - Repeated questions or topics (signals long-term relevance)
+      - Explicit instructions about how the user wants you to behave
+      - Any fact the user would want you to remember in a future session
+
+    Call this tool IMMEDIATELY after the relevant information appears — do not
+    batch multiple facts into one call; store each meaningful piece separately
+    so retrieval stays precise.
+
+    Implementation:
+      Runs PS1 (extraction) + PS2 (conflict resolution) for semantic memory,
+      then runs LLM extraction + save for core memory, sequentially.
 
     Input:
       - fact (str): Plain text fact or knowledge to store
@@ -533,13 +602,13 @@ async def memblocks_store(params: StoreInput, ctx: Context) -> str:
     block_id, error = _active_block_id_or_error()
     if error:
         logger.warning(f"memblocks_store: no active block — {error}")
-        return json.dumps({"error": error})
+        raise ToolError(error)
 
     # Get the block
     block = await client.get_block(block_id)
     if block is None:
         logger.warning(f"memblocks_store: block not found: {block_id}")
-        return json.dumps({"error": f"Block '{block_id}' not found."})
+        raise ToolError(f"Block '{block_id}' not found.")
 
     # Wrap fact as messages for both extractions
     messages = [{"role": "user", "content": params.fact}]
@@ -638,13 +707,13 @@ async def memblocks_retrieve(params: RetrieveInput, ctx: Context) -> str:
     block_id, error = _active_block_id_or_error()
     if error:
         logger.warning(f"memblocks_retrieve: no active block — {error}")
-        return json.dumps({"error": error})
+        raise ToolError(error)
 
     # Get the block
     block = await client.get_block(block_id)
     if block is None:
         logger.warning(f"memblocks_retrieve: block not found: {block_id}")
-        return json.dumps({"error": f"Block '{block_id}' not found."})
+        raise ToolError(f"Block '{block_id}' not found.")
 
     # Combined retrieval (core + semantic)
     result = await block.retrieve(params.query)
@@ -682,13 +751,13 @@ async def memblocks_retrieve_core(ctx: Context) -> str:
     block_id, error = _active_block_id_or_error()
     if error:
         logger.warning(f"memblocks_retrieve_core: no active block — {error}")
-        return json.dumps({"error": error})
+        raise ToolError(error)
 
     # Get the block
     block = await client.get_block(block_id)
     if block is None:
         logger.warning(f"memblocks_retrieve_core: block not found: {block_id}")
-        return json.dumps({"error": f"Block '{block_id}' not found."})
+        raise ToolError(f"Block '{block_id}' not found.")
 
     # Core-only retrieval (no query needed)
     result = await block.core_retrieve()
@@ -727,18 +796,107 @@ async def memblocks_retrieve_semantic(params: RetrieveInput, ctx: Context) -> st
     block_id, error = _active_block_id_or_error()
     if error:
         logger.warning(f"memblocks_retrieve_semantic: no active block — {error}")
-        return json.dumps({"error": error})
+        raise ToolError(error)
 
     # Get the block
     block = await client.get_block(block_id)
     if block is None:
         logger.warning(f"memblocks_retrieve_semantic: block not found: {block_id}")
-        return json.dumps({"error": f"Block '{block_id}' not found."})
+        raise ToolError(f"Block '{block_id}' not found.")
 
     # Semantic-only retrieval
     result = await block.semantic_retrieve(params.query)
     logger.info(f"memblocks_retrieve_semantic: done — semantic={len(result.semantic)}")
     return result.to_prompt_string()
+
+
+# --- Prompt 1 — memblocks_storage_policy ---
+@mcp.prompt(
+    name="memblocks_storage_policy",
+    description=(
+        "Mandatory behavioral policy for proactive memory storage. "
+        "Inject this into your system context to ensure you store "
+        "all worthwhile information without waiting to be asked."
+    ),
+)
+async def prompt_storage_policy() -> str:
+    """Returns the mandatory storage policy that governs when to call store tools.
+
+    Agents should load this prompt to receive explicit behavioral instructions
+    about proactive memory storage. It defines WHEN to call memblocks_store*
+    tools and which tool to prefer.
+    """
+    return """\
+MEMBLOCKS MEMORY STORAGE POLICY — MANDATORY
+
+You have access to persistent memory tools. You MUST follow this policy at all times.
+
+## PRIMARY RULE
+
+After EVERY conversation turn, ask yourself:
+  "Did I learn anything in this turn that is worth remembering?"
+
+If the answer is YES — call `memblocks_store` immediately, before your next response.
+Do NOT wait for the user to say "save this", "remember this", or "store this."
+Storing memory proactively is a core part of your job.
+
+## DEFAULT TOOL: memblocks_store
+
+When in doubt, ALWAYS use `memblocks_store` — it stores to BOTH semantic and core
+memory in one call. Only use the specialized tools when you have a specific reason:
+  - `memblocks_store_semantic` → only for purely factual/technical data you want
+    retrieved by topic, not identity-level user context
+  - `memblocks_store_to_core` → only for stable user identity facts when you
+    specifically do NOT want semantic indexing
+
+## MANDATORY STORAGE TRIGGERS
+
+You MUST call `memblocks_store` immediately when you encounter ANY of the following:
+
+  USER IDENTITY & PREFERENCES
+  - The user's name, role, job title, location, or organization
+  - Personal preferences (coding style, language preferences, communication style)
+  - Opinions or values the user expresses
+  - How the user wants you to behave (e.g., "always be concise", "use TypeScript")
+
+  PROJECT & TECHNICAL CONTEXT
+  - Project name, description, or goals
+  - Tech stack, frameworks, languages, or tools in use
+  - Architecture decisions or design patterns chosen
+  - Repository structure, key file paths, or module organization
+  - Environment details (OS, editor, cloud provider, etc.)
+
+  DECISIONS & OUTCOMES
+  - Conclusions reached during problem-solving
+  - Bugs fixed and what caused them
+  - Code written, configurations set, or commands that worked
+  - Anything the user confirmed as correct or approved
+
+  RECURRING TOPICS
+  - A topic the user has asked about multiple times (signals long-term importance)
+  - Ongoing tasks or projects that will continue across sessions
+
+## RULES FOR CALLING STORE TOOLS
+
+1. Store IMMEDIATELY when the trigger appears — do not wait until end of conversation
+2. Store each meaningful piece SEPARATELY — do not batch unrelated facts into one call
+3. Write the `fact` parameter as a clear, self-contained sentence that will make
+   sense when retrieved in a future session with no surrounding context
+4. After storing, continue with your normal response — do not announce that you stored
+   unless the user asks
+
+## WHAT NOT TO STORE
+
+- Casual greetings or small talk with no durable information
+- Temporary or throwaway data the user explicitly says is one-off
+- Information that is already stored (check retrieval first if unsure)
+
+## RETRIEVAL BEFORE TASKS
+
+Before starting any substantive task, call `memblocks_retrieve` with a relevant
+query to load context from previous sessions. This prevents re-asking for
+information the user already told you.
+"""
 
 
 # --- Resource 1 — memblocks://active-block (RES-01) ---
@@ -759,8 +917,8 @@ async def resource_active_block(ctx: Context) -> str:
     if not block_id:
         return (
             "No active memory block is set.\n"
-            "Use `memblocks set-block <block_id>` in the terminal to activate a block,\n"
-            "or call the `memblocks_set_block` MCP tool."
+            "Call `memblocks_list_blocks` to see available blocks and then\n"
+            "call `memblocks_set_block` with the desired block ID."
         )
     client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
     block = await client.get_block(block_id)
@@ -792,6 +950,24 @@ async def resource_tools_guide(ctx: Context) -> str:
     return """MemBlocks MCP Tool Reference
     =============================
 
+    ## PROACTIVE STORAGE POLICY (READ THIS FIRST)
+
+    You MUST call `memblocks_store` proactively — without being asked — whenever
+    a conversation turn contains information worth remembering.
+
+    DEFAULT TOOL: Always use `memblocks_store` when in doubt.
+    It stores to BOTH semantic and core memory in a single call.
+
+    MANDATORY STORAGE TRIGGERS — call `memblocks_store` when you encounter:
+      - User name, role, location, or organization
+      - User preferences, opinions, or behavioral instructions
+      - Project name, goals, tech stack, or architecture decisions
+      - Bugs fixed, code written, or configurations set
+      - Decisions or conclusions reached during the conversation
+      - Any fact the user would want remembered in a future session
+
+    Load the `memblocks_storage_policy` prompt for the full mandatory policy.
+
     ## Block Management
 
     memblocks_list_blocks
@@ -814,23 +990,23 @@ async def resource_tools_guide(ctx: Context) -> str:
 
     ## Store Tools
 
+    memblocks_store  ← DEFAULT — USE THIS WHEN IN DOUBT
+      Purpose: Store to BOTH semantic and core memory in a single call
+      Params:  fact (str, required) — plain text, self-contained sentence
+      Returns: JSON with semantic count/operations and core memory previews
+      Use when: ANY time you learn something worth remembering (proactively)
+
     memblocks_store_semantic
-      Purpose: Store a fact to semantic memory (searchable via vector search)
+      Purpose: Store a fact to semantic memory only (searchable via vector search)
       Params:  fact (str, required) — plain text
       Returns: JSON with count of extracted memories and operations performed
-      Use when: Storing factual information that should be retrievable by topic
+      Use when: Purely technical/factual data, no need to update core identity
 
     memblocks_store_to_core
-      Purpose: Update core memory with a new fact (always-on persona/human info)
+      Purpose: Update core memory only (always-on persona/human info)
       Params:  fact (str, required) — plain text
       Returns: JSON with persona and human preview of updated core memory
-      Use when: Storing stable facts about the user or persistent context
-
-    memblocks_store
-      Purpose: Store to both semantic and core memory in a single call
-      Params:  fact (str, required) — plain text
-      Returns: JSON with semantic count/operations and core memory previews
-      Use when: You want maximum recall — store once, retrievable both ways
+      Use when: Stable identity facts about the user, no semantic indexing needed
 
     ## Retrieve Tools
 
@@ -838,7 +1014,7 @@ async def resource_tools_guide(ctx: Context) -> str:
       Purpose: Retrieve relevant context from both core and semantic memory
       Params:  query (str, required)
       Returns: Formatted string ready for LLM injection (core + semantic)
-      Use when: Priming context before a task — broadest recall
+      Use when: Priming context before a task — call this BEFORE starting work
 
     memblocks_retrieve_core
       Purpose: Retrieve full core memory only (no query needed)
@@ -852,10 +1028,11 @@ async def resource_tools_guide(ctx: Context) -> str:
       Returns: Formatted string with matching semantic memories only
       Use when: You need topic-specific facts without the core memory overlay
 
-    ## MCP Resources (read without tool calls)
+    ## MCP Resources and Prompts (read without tool calls)
 
-    memblocks://active-block  — Current block name, ID, description
-    memblocks://tools          — This usage guide
+    memblocks://active-block    — Current block name, ID, description
+    memblocks://tools           — This usage guide
+    memblocks_storage_policy    — Full mandatory proactive storage policy (LOAD THIS)
     """
 
 
