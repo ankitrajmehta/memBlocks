@@ -40,8 +40,8 @@ Requirements for the MCP Server milestone. Each maps to roadmap phases.
 
 ### MCP Resources
 
-- [ ] **RES-01**: MCP resource `memblocks://active-block` exposes current block name, ID, and description so agents can read context without making a tool call
-- [ ] **RES-02**: MCP resource `memblocks://tools` exposes a usage guide documenting all available tools, their purpose, and when to use each
+- [x] **RES-01**: MCP resource `memblocks://active-block` exposes current block name, ID, and description so agents can read context without making a tool call
+- [x] **RES-02**: MCP resource `memblocks://tools` exposes a usage guide documenting all available tools, their purpose, and when to use each
 
 ## v2 Requirements
 
@@ -100,8 +100,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RETR-03 | Phase 3 | Retrieve Tools | Complete |
 | CLI-01 | Phase 4 | CLI + Resources | Complete |
 | CLI-02 | Phase 4 | CLI + Resources | Complete |
-| RES-01 | Phase 4 | CLI + Resources | Pending |
-| RES-02 | Phase 4 | CLI + Resources | Pending |
+| RES-01 | Phase 4 | CLI + Resources | Complete |
+| RES-02 | Phase 4 | CLI + Resources | Complete |
 
 **Coverage:**
 - v1.1 requirements: 17 total

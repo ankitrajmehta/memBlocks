@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Server
-status: in_progress
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-03-14T16:58:48.000Z"
-last_activity: 2026-03-14 — Phase 4 Plan 1 (CLI Resources) completed
+status: completed
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-03-14T16:56:38.000Z"
+last_activity: 2026-03-14 — Phase 4 Plan 2 (MCP Resources) completed
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 4
   total_plans: 2
   completed_plans: 2
-  percent: 75
+  percent: 100
 ---
 
 # Project State
@@ -26,18 +26,18 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 4 of 4 (CLI Resources)
-Plan: 1 of 1 (CLI Resources)
+Plan: 2 of 2 (MCP Resources)
 Status: Completed
-Last activity: 2026-03-14 — Phase 4 Plan 1 (CLI Resources) completed
+Last activity: 2026-03-14 — Phase 4 Plan 2 (MCP Resources) completed
 
-Progress: [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 75%
+Progress: [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
+- Total plans completed: 5
 - Average duration: 3min
-- Total execution time: 12min
+- Total execution time: 15min
 
 **By Phase:**
 
@@ -46,7 +46,7 @@ Progress: [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 75%
 | 1. Foundation | 1 | 1 | - |
 | 2. Store Tools | 2 | 2 | - |
 | 3. Retrieve Tools | 1 | 1 | 3min |
-| 4. CLI Resources | 1 | 1 | 5min |
+| 4. CLI Resources | 2 | 2 | 4min |
 
 **Recent Trend:**
 - Last 4 plans: 3min avg
@@ -55,6 +55,7 @@ Progress: [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 75%
 *Updated after each plan completion*
 | Phase 03-01 | 3min | 3 tasks | 1 files |
 | Phase 04-01 | 5min | 2 tasks | 5 files |
+| Phase 04-02 | 3min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -75,11 +76,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- **Phase 4**: Verify exact FastMCP `@mcp.resource` URI format for static resources (`memblocks://active-block`) before implementation
 - **Phase 1**: Confirm `client.close()` / graceful shutdown hook availability in FastMCP lifespan (minor — MongoDB connection; not critical for local use)
 
 ## Session Continuity
 
-Last session: 2026-03-14T16:58:48.000Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-03-14T16:56:38.000Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None

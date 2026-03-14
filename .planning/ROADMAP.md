@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 Foundation** — Pre-GSD (shipped, existing codebase)
-- 🚧 **v1.1 MCP Server** — Phases 1–4 (in progress)
+- ✅ **v1.1 MCP Server** — Phases 1–4 (COMPLETE)
 
 ## Phases
 
@@ -14,7 +14,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 
 </details>
 
-### 🚧 v1.1 MCP Server (In Progress)
+### ✅ v1.1 MCP Server (Complete)
 
 **Milestone Goal:** Any AI agent connected to MemBlocks can store and retrieve the right memory from the right block at the right time, with conflict resolution and source transparency.
 
@@ -22,7 +22,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 - [x] **Phase 2.01: Store Semantic & Core** — Semantic store (PS1+PS2) and core store (LLM update) tools
 - [x] **Phase 2.02: Store Combined** — Combined store tool for single-call semantic+core
 - [x] **Phase 3: Retrieve Tools** — Semantic retrieve, core retrieve, and combined retrieve via MCP
-- [ ] **Phase 4: CLI + Resources** — Block-switching CLI commands and MCP agent-readable resources
+- [x] **Phase 4: CLI + Resources** — Block-switching CLI commands and MCP agent-readable resources
 
 ## Phase Details
 
@@ -71,7 +71,7 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
 
 Plans:
 - [x] 04-01-PLAN.md — CLI commands: `memblocks set-block` and `memblocks get-block` (Complete: 2026-03-14)
-- [ ] 04-02-PLAN.md — MCP resources: `memblocks://active-block` and `memblocks://tools`
+- [x] 04-02-PLAN.md — MCP resources: `memblocks://active-block` and `memblocks://tools` (Complete: 2026-03-14)
 
 ## Progress
 
@@ -82,7 +82,7 @@ Plans:
 | 1. Foundation | v1.1 | 1/1 | Complete | 2026-03-12 |
 | 2. Store Tools | v1.1 | 2/2 | Complete | 2026-03-13 |
 | 3. Retrieve Tools | v1.1 | 1/1 | Complete | 2026-03-14 |
-| 4. CLI + Resources | v1.1 | 1/2 | In Progress | - |
+| 4. CLI + Resources | v1.1 | 2/2 | Complete | 2026-03-14 |
 
 ---
 *Roadmap created: 2026-03-12*
