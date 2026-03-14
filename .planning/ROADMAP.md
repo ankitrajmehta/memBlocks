@@ -67,11 +67,12 @@ Full Python library, FastAPI backend, React frontend, CLI, multi-provider LLM su
   2. User runs `memblocks get-block` and sees the current active block name and ID
   3. Agent reads the `memblocks://active-block` MCP resource and receives the current block name, ID, and description without calling any tool
   4. Agent reads the `memblocks://tools` MCP resource and receives a human-readable usage guide listing all available tools, their purpose, and when to use each
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
 - [x] 04-01-PLAN.md — CLI commands: `memblocks set-block` and `memblocks get-block` (Complete: 2026-03-14)
 - [x] 04-02-PLAN.md — MCP resources: `memblocks://active-block` and `memblocks://tools` (Complete: 2026-03-14)
+- [ ] 04-03-PLAN.md — Gap closure: fix broken `memblocks-cli` binary + align REQUIREMENTS.md (gap_closure)
 
 ## Progress
 
