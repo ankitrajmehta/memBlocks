@@ -709,6 +709,124 @@ async def memblocks_retrieve_semantic(params: RetrieveInput, ctx: Context) -> st
     return result.to_prompt_string()
 
 
+# --- Resource 1 — memblocks://active-block (RES-01) ---
+@mcp.resource(
+    uri="memblocks://active-block",
+    name="Active Memory Block",
+    description="Current active memory block name, ID, and description",
+    mime_type="text/plain",
+)
+async def resource_active_block(ctx: Context) -> str:
+    """Exposes the current active memory block metadata.
+
+    Returns block name, ID, and description so agents can read block context
+    without making a tool call. Returns a helpful message if no block is active.
+    """
+    logger.info("resource_active_block: called")
+    block_id = get_active_block_id()
+    if not block_id:
+        return (
+            "No active memory block is set.\n"
+            "Use `memblocks set-block <block_id>` in the terminal to activate a block,\n"
+            "or call the `memblocks_set_block` MCP tool."
+        )
+    client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
+    block = await client.get_block(block_id)
+    if block is None:
+        return f"Active block ID '{block_id}' was not found. It may have been deleted."
+    lines = [
+        f"Active Memory Block",
+        f"  Name: {block.name}",
+        f"  ID:   {block.id}",
+    ]
+    if block.description:
+        lines.append(f"  Description: {block.description}")
+    return "\n".join(lines)
+
+
+# --- Resource 2 — memblocks://tools (RES-02) ---
+@mcp.resource(
+    uri="memblocks://tools",
+    name="MemBlocks Tool Guide",
+    description="Usage guide for all available MemBlocks MCP tools",
+    mime_type="text/plain",
+)
+async def resource_tools_guide(ctx: Context) -> str:
+    """Usage guide listing all available MemBlocks tools.
+
+    Returns a human-readable reference agents can inject into context
+    to understand when and how to call each tool.
+    """
+    return """MemBlocks MCP Tool Reference
+    =============================
+
+    ## Block Management
+
+    memblocks_list_blocks
+      Purpose: List all memory blocks for the configured user
+      Params:  none
+      Returns: JSON array with id, name, description, is_active per block
+      Use when: You need to discover available blocks or check which is active
+
+    memblocks_create_block
+      Purpose: Create a new memory block
+      Params:  name (str, required), description (str, optional)
+      Returns: JSON with new block id, name, description, confirmation message
+      Use when: User wants a new isolated memory space
+
+    memblocks_set_block
+      Purpose: Activate a memory block for subsequent operations
+      Params:  block_id (str, required)
+      Returns: JSON with block_id, name, confirmation message
+      Use when: Switching context to a different memory block
+
+    ## Store Tools
+
+    memblocks_store_semantic
+      Purpose: Store a fact to semantic memory (searchable via vector search)
+      Params:  fact (str, required) — plain text
+      Returns: JSON with count of extracted memories and operations performed
+      Use when: Storing factual information that should be retrievable by topic
+
+    memblocks_store_to_core
+      Purpose: Update core memory with a new fact (always-on persona/human info)
+      Params:  fact (str, required) — plain text
+      Returns: JSON with persona and human preview of updated core memory
+      Use when: Storing stable facts about the user or persistent context
+
+    memblocks_store
+      Purpose: Store to both semantic and core memory in a single call
+      Params:  fact (str, required) — plain text
+      Returns: JSON with semantic count/operations and core memory previews
+      Use when: You want maximum recall — store once, retrievable both ways
+
+    ## Retrieve Tools
+
+    memblocks_retrieve
+      Purpose: Retrieve relevant context from both core and semantic memory
+      Params:  query (str, required)
+      Returns: Formatted string ready for LLM injection (core + semantic)
+      Use when: Priming context before a task — broadest recall
+
+    memblocks_retrieve_core
+      Purpose: Retrieve full core memory only (no query needed)
+      Params:  none
+      Returns: Formatted string with full core memory content
+      Use when: You need stable persona/human facts without semantic search
+
+    memblocks_retrieve_semantic
+      Purpose: Retrieve only semantically relevant memories for a query
+      Params:  query (str, required)
+      Returns: Formatted string with matching semantic memories only
+      Use when: You need topic-specific facts without the core memory overlay
+
+    ## MCP Resources (read without tool calls)
+
+    memblocks://active-block  — Current block name, ID, description
+    memblocks://tools          — This usage guide
+    """
+
+
 # --- Entry point ---
 def main() -> None:
     """Entry point for `memblocks-mcp` CLI command."""
