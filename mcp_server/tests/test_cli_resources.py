@@ -1,6 +1,7 @@
-"""Test scaffold for Phase 4 CLI resources.
+"""Tests for Phase 4 CLI resources.
 
-Wave 0: Tests for set-block and get-block CLI commands.
+Covers: set-block, get-block, list-blocks, lock, unlock CLI commands,
+and the MCP lock guard on create_block / set_block server tools.
 """
 
 import json
@@ -143,7 +144,7 @@ class TestCLIHelp:
         """Test: CLI --help shows available subcommands."""
         from mcp_server import cli
 
-        monkeypatch.setattr(sys, "argv", ["memblocks", "--help"])
+        monkeypatch.setattr(sys, "argv", ["memblocks-cli", "--help"])
 
         with pytest.raises(SystemExit):
             cli.main()
@@ -151,3 +152,197 @@ class TestCLIHelp:
         captured = capsys.readouterr()
         assert "set-block" in captured.out
         assert "get-block" in captured.out
+        assert "list-blocks" in captured.out
+        assert "lock" in captured.out
+        assert "unlock" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# State layer: mcp_lock
+# ---------------------------------------------------------------------------
+
+
+class TestStateMcpLock:
+    """Test get_mcp_lock / set_mcp_lock in state.py."""
+
+    def test_lock_defaults_to_false_when_no_file(self, tmp_path):
+        from mcp_server import state
+
+        original = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+        try:
+            assert state.get_mcp_lock() is False
+        finally:
+            state.STATE_FILE = original
+
+    def test_set_lock_true_then_get_returns_true(self, tmp_path):
+        from mcp_server import state
+
+        original = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+        try:
+            state.set_mcp_lock(True)
+            assert state.get_mcp_lock() is True
+        finally:
+            state.STATE_FILE = original
+
+    def test_set_lock_false_then_get_returns_false(self, tmp_path):
+        from mcp_server import state
+
+        original = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+        try:
+            state.set_mcp_lock(True)
+            state.set_mcp_lock(False)
+            assert state.get_mcp_lock() is False
+        finally:
+            state.STATE_FILE = original
+
+    def test_lock_preserves_block_id(self, tmp_path):
+        """set_mcp_lock must not clobber an existing block_id."""
+        from mcp_server import state
+
+        original = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+        try:
+            state.set_active_block_id("myblock")
+            state.set_mcp_lock(True)
+            assert state.get_active_block_id() == "myblock"
+            assert state.get_mcp_lock() is True
+        finally:
+            state.STATE_FILE = original
+
+    def test_set_block_preserves_lock(self, tmp_path):
+        """set_active_block_id must not clobber an existing mcp_locked flag."""
+        from mcp_server import state
+
+        original = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+        try:
+            state.set_mcp_lock(True)
+            state.set_active_block_id("myblock")
+            assert state.get_mcp_lock() is True
+            assert state.get_active_block_id() == "myblock"
+        finally:
+            state.STATE_FILE = original
+
+
+# ---------------------------------------------------------------------------
+# CLI: lock / unlock commands
+# ---------------------------------------------------------------------------
+
+
+class TestCLILock:
+    """Test CLI lock and unlock commands."""
+
+    def test_lock_sets_mcp_lock_true(self, tmp_path, capsys, monkeypatch):
+        from mcp_server import state, cli
+
+        original = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+        try:
+            monkeypatch.setattr(sys, "argv", ["memblocks-cli", "lock"])
+            with pytest.raises(SystemExit) as exc:
+                cli.main()
+            assert exc.value.code == 0
+            assert state.get_mcp_lock() is True
+            out = capsys.readouterr().out
+            assert "locked" in out.lower()
+        finally:
+            state.STATE_FILE = original
+
+    def test_unlock_sets_mcp_lock_false(self, tmp_path, capsys, monkeypatch):
+        from mcp_server import state, cli
+
+        original = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+        try:
+            state.set_mcp_lock(True)
+            monkeypatch.setattr(sys, "argv", ["memblocks-cli", "unlock"])
+            with pytest.raises(SystemExit) as exc:
+                cli.main()
+            assert exc.value.code == 0
+            assert state.get_mcp_lock() is False
+            out = capsys.readouterr().out
+            assert "unlocked" in out.lower()
+        finally:
+            state.STATE_FILE = original
+
+
+# ---------------------------------------------------------------------------
+# Server: lock guard on create_block and set_block
+# ---------------------------------------------------------------------------
+
+
+class TestServerLockGuard:
+    """Test that locked state blocks create_block and set_block MCP tools."""
+
+    def test_create_block_blocked_when_locked(self, tmp_path, monkeypatch):
+        """memblocks_create_block returns error JSON when MCP is locked."""
+        import json
+        import asyncio
+        from mcp_server import state
+        from mcp_server.server import memblocks_create_block, CreateBlockInput
+
+        original = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+        try:
+            state.set_mcp_lock(True)
+
+            # Build a minimal fake context (not needed — lock check fires first)
+            class FakeCtx:
+                pass
+
+            params = CreateBlockInput(name="should-not-be-created")
+            result = asyncio.run(memblocks_create_block(params, FakeCtx()))
+            data = json.loads(result)
+            assert "error" in data
+            assert "locked" in data["error"].lower()
+        finally:
+            state.STATE_FILE = original
+
+    def test_set_block_blocked_when_locked(self, tmp_path, monkeypatch):
+        """memblocks_set_block returns error JSON when MCP is locked."""
+        import json
+        import asyncio
+        from mcp_server import state
+        from mcp_server.server import memblocks_set_block, SetBlockInput
+
+        original = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+        try:
+            state.set_mcp_lock(True)
+
+            class FakeCtx:
+                pass
+
+            params = SetBlockInput(block_id="some-block-id")
+            result = asyncio.run(memblocks_set_block(params, FakeCtx()))
+            data = json.loads(result)
+            assert "error" in data
+            assert "locked" in data["error"].lower()
+        finally:
+            state.STATE_FILE = original
+
+    def test_create_block_allowed_when_unlocked(self, tmp_path, monkeypatch):
+        """Lock check passes when unlocked — proceeds to client call (may fail without real client)."""
+        import asyncio
+        from mcp_server import state
+        from mcp_server.server import memblocks_create_block, CreateBlockInput
+
+        original = state.STATE_FILE
+        state.STATE_FILE = tmp_path / "active_block.json"
+        try:
+            state.set_mcp_lock(False)
+
+            # Without a real client the call will fail, but it must NOT return a lock error.
+            # We verify by checking it raises AttributeError (missing lifespan_context)
+            # rather than returning a lock-error JSON.
+            class FakeCtx:
+                request_context = None
+
+            params = CreateBlockInput(name="test-block")
+            with pytest.raises((AttributeError, TypeError)):
+                asyncio.run(memblocks_create_block(params, FakeCtx()))
+        finally:
+            state.STATE_FILE = original

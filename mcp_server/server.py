@@ -17,7 +17,12 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from memblocks import MemBlocksClient, MemBlocksConfig
 from memblocks.llm.task_settings import LLMSettings, LLMTaskSettings
-from mcp_server.state import get_active_block_id, set_active_block_id
+from mcp_server.state import (
+    get_active_block_id,
+    get_mcp_lock,
+    set_active_block_id,
+    set_user_id,
+)
 
 # --- Logging setup ---
 # stdout is reserved for MCP stdio protocol — all logging goes to stderr + file.
@@ -99,7 +104,10 @@ async def app_lifespan(server: FastMCP):
     client = MemBlocksClient(config)
     # Ensure user exists
     await client.get_or_create_user(user_id)
-    logger.info("MemBlocksClient ready")
+    # Write user_id to shared state file so the CLI can resolve it without
+    # duplicating environment variable / config file lookup logic.
+    set_user_id(user_id)
+    logger.info(f"MemBlocksClient ready — user_id written to state file")
     yield {"client": client, "user_id": user_id}
     logger.info("Shutting down MemBlocksClient")
     await client.close()
@@ -204,6 +212,18 @@ async def memblocks_create_block(params: CreateBlockInput, ctx: Context) -> str:
       - message (str): success confirmation
     """
     logger.info(f"memblocks_create_block: name={params.name!r}")
+
+    if get_mcp_lock():
+        logger.warning("memblocks_create_block: blocked — MCP is locked by CLI")
+        return json.dumps(
+            {
+                "error": (
+                    "MCP is locked: block creation is not permitted. "
+                    "Run 'memblocks-cli unlock' to restore permissions."
+                )
+            }
+        )
+
     client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
     user_id: str = ctx.request_context.lifespan_context["user_id"]
 
@@ -255,6 +275,18 @@ async def memblocks_set_block(params: SetBlockInput, ctx: Context) -> str:
       - message (str): confirmation message
     """
     logger.info(f"memblocks_set_block: block_id={params.block_id!r}")
+
+    if get_mcp_lock():
+        logger.warning("memblocks_set_block: blocked — MCP is locked by CLI")
+        return json.dumps(
+            {
+                "error": (
+                    "MCP is locked: switching blocks is not permitted. "
+                    "Run 'memblocks-cli unlock' to restore permissions."
+                )
+            }
+        )
+
     client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
     user_id: str = ctx.request_context.lifespan_context["user_id"]
 
