@@ -35,8 +35,8 @@ Requirements for the MCP Server milestone. Each maps to roadmap phases.
 
 ### CLI Commands
 
-- [ ] **CLI-01**: User can set the active block by block ID via `memblocks set-block <block_id>`, which writes to the shared state file
-- [ ] **CLI-02**: User can view the current active block (name, ID) via `memblocks get-block`
+- [x] **CLI-01**: User can set the active block by block ID via `memblocks set-block <block_id>`, which writes to the shared state file
+- [x] **CLI-02**: User can view the current active block (name, ID) via `memblocks get-block`
 
 ### MCP Resources
 
@@ -98,8 +98,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RETR-01 | Phase 3 | Retrieve Tools | Complete |
 | RETR-02 | Phase 3 | Retrieve Tools | Complete |
 | RETR-03 | Phase 3 | Retrieve Tools | Complete |
-| CLI-01 | Phase 4 | CLI + Resources | Pending |
-| CLI-02 | Phase 4 | CLI + Resources | Pending |
+| CLI-01 | Phase 4 | CLI + Resources | Complete |
+| CLI-02 | Phase 4 | CLI + Resources | Complete |
 | RES-01 | Phase 4 | CLI + Resources | Pending |
 | RES-02 | Phase 4 | CLI + Resources | Pending |
 
