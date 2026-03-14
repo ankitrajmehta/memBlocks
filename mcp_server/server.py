@@ -565,6 +565,150 @@ async def memblocks_store(params: StoreInput, ctx: Context) -> str:
     return json.dumps(result, indent=2)
 
 
+# --- Tool 7 — memblocks_retrieve (RETR-01) ---
+class RetrieveInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    query: str = Field(
+        ...,
+        description="The query string to search semantic memory for",
+        min_length=1,
+    )
+
+
+@mcp.tool(
+    name="memblocks_retrieve",
+    annotations={
+        "title": "Retrieve from Memory",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def memblocks_retrieve(params: RetrieveInput, ctx: Context) -> str:
+    """Retrieve memories from the active block using semantic search.
+
+    This tool performs a combined retrieval from both core memory (full content)
+    and semantic memory (vector search). Returns formatted context ready for
+    LLM injection.
+
+    Input:
+      - query (str): Search query for semantic memory retrieval
+
+    Returns a string formatted for LLM injection, containing:
+      - Core memory (persona + stable human facts)
+      - Semantically relevant memories matching the query
+    """
+    logger.info(f"memblocks_retrieve: query={params.query[:80]!r}")
+    client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
+
+    # Check for active block
+    block_id, error = _active_block_id_or_error()
+    if error:
+        logger.warning(f"memblocks_retrieve: no active block — {error}")
+        return json.dumps({"error": error})
+
+    # Get the block
+    block = await client.get_block(block_id)
+    if block is None:
+        logger.warning(f"memblocks_retrieve: block not found: {block_id}")
+        return json.dumps({"error": f"Block '{block_id}' not found."})
+
+    # Combined retrieval (core + semantic)
+    result = await block.retrieve(params.query)
+    logger.info(
+        f"memblocks_retrieve: done — core={result.core is not None}, semantic={len(result.semantic)}"
+    )
+    return result.to_prompt_string()
+
+
+# --- Tool 8 — memblocks_retrieve_core (RETR-02) ---
+@mcp.tool(
+    name="memblocks_retrieve_core",
+    annotations={
+        "title": "Retrieve Core Memory Only",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def memblocks_retrieve_core(ctx: Context) -> str:
+    """Retrieve only the core memory from the active block.
+
+    Core memory contains persona (AI's perspective on the human) and stable
+    human facts. This returns the full core memory contents regardless of any
+    query - useful when you need the complete context about the human.
+
+    Returns a string containing the full core memory, formatted for LLM injection.
+    No input parameters needed.
+    """
+    logger.info("memblocks_retrieve_core: called")
+    client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
+
+    # Check for active block
+    block_id, error = _active_block_id_or_error()
+    if error:
+        logger.warning(f"memblocks_retrieve_core: no active block — {error}")
+        return json.dumps({"error": error})
+
+    # Get the block
+    block = await client.get_block(block_id)
+    if block is None:
+        logger.warning(f"memblocks_retrieve_core: block not found: {block_id}")
+        return json.dumps({"error": f"Block '{block_id}' not found."})
+
+    # Core-only retrieval (no query needed)
+    result = await block.core_retrieve()
+    logger.info(f"memblocks_retrieve_core: done — core={result.core is not None}")
+    return result.to_prompt_string()
+
+
+# --- Tool 9 — memblocks_retrieve_semantic (RETR-03) ---
+@mcp.tool(
+    name="memblocks_retrieve_semantic",
+    annotations={
+        "title": "Retrieve Semantic Memory Only",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def memblocks_retrieve_semantic(params: RetrieveInput, ctx: Context) -> str:
+    """Retrieve only semantic memories from the active block.
+
+    Semantic memory contains facts, knowledge, and learned information retrieved
+    via vector search. This excludes core memory - useful when you only need
+    facts/knowledge without persona or human context.
+
+    Input:
+      - query (str): Search query for semantic memory retrieval
+
+    Returns a string containing only semantically relevant memories, formatted
+    for LLM injection.
+    """
+    logger.info(f"memblocks_retrieve_semantic: query={params.query[:80]!r}")
+    client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
+
+    # Check for active block
+    block_id, error = _active_block_id_or_error()
+    if error:
+        logger.warning(f"memblocks_retrieve_semantic: no active block — {error}")
+        return json.dumps({"error": error})
+
+    # Get the block
+    block = await client.get_block(block_id)
+    if block is None:
+        logger.warning(f"memblocks_retrieve_semantic: block not found: {block_id}")
+        return json.dumps({"error": f"Block '{block_id}' not found."})
+
+    # Semantic-only retrieval
+    result = await block.semantic_retrieve(params.query)
+    logger.info(f"memblocks_retrieve_semantic: done — semantic={len(result.semantic)}")
+    return result.to_prompt_string()
+
+
 # --- Entry point ---
 def main() -> None:
     """Entry point for `memblocks-mcp` CLI command."""
