@@ -39,6 +39,6 @@ memblocks_lib\docs\SEMANTIC_RETRIEVAL_ENHANCEMENT.md
 memblocks_lib\docs\TESTING_GUIDE.md
 verify_retrieval.py
 llm_usage.json
-# .planning/
+.planning/
 .agents/
 nul
