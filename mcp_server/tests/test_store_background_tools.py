@@ -139,6 +139,9 @@ async def test_store_semantic_dispatches_extract_and_store_in_background(
     # Call should return immediately but schedule background work
     result = await memblocks_store_semantic(StoreSemanticInput(fact="test fact"), ctx)
 
+    # Give the event loop a chance to run the background task
+    await asyncio.sleep(0.1)
+
     # Verify the method was called (background dispatch)
     assert call_tracker["called"], "extract_and_store should be called"
     assert call_tracker["messages"] == [{"role": "user", "content": "test fact"}]
@@ -199,6 +202,9 @@ async def test_store_to_core_dispatches_update_in_background(mock_state):
     ctx = FakeContext(mock_client)
 
     result = await memblocks_store_to_core(StoreToCoreInput(fact="test fact"), ctx)
+
+    # Give the event loop a chance to run the background task
+    await asyncio.sleep(0.1)
 
     # Verify update was called
     assert call_tracker["called"], "update should be called"
@@ -268,6 +274,9 @@ async def test_store_dispatches_both_background_tasks(mock_state):
     ctx = FakeContext(mock_client)
 
     result = await memblocks_store(StoreInput(fact="test fact"), ctx)
+
+    # Give the event loop a chance to run the background tasks
+    await asyncio.sleep(0.1)
 
     # Both should be called in background
     assert semantic_called["called"], "extract_and_store should be called"

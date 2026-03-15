@@ -4,6 +4,7 @@ FastMCP server for MemBlocks.
 Exposes MemBlocks memory tools to AI agents via stdio MCP protocol.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -136,7 +137,7 @@ async def app_lifespan(server: FastMCP):
             logger.info("Created default active block: %s", active_block.id)
         set_active_block_id(active_block.id)
 
-    logger.info(f"MemBlocksClient ready — user_id written to state file")
+    logger.info(f"MemBlocksClient ready, user_id written to state file")
     yield {"client": client, "user_id": user_id}
     logger.info("Shutting down MemBlocksClient")
     await client.close()
@@ -156,6 +157,29 @@ def _active_block_id_or_error() -> tuple[str | None, str | None]:
             "then call `memblocks_set_block` with the desired block ID to activate one."
         )
     return block_id, None
+
+
+# --- Helper — background task dispatch with exception logging ---
+def _dispatch_background_task(
+    coro,
+    task_name: str,
+    error_logger,
+):
+    """Dispatch a coroutine as a background task with exception logging.
+
+    Args:
+        coro: The coroutine to run in background
+        task_name: Descriptive name for logging
+        error_logger: Logger instance for error reporting
+    """
+
+    async def run_with_logging():
+        try:
+            await coro
+        except Exception as e:
+            error_logger.exception(f"Background task '{task_name}' failed: {e}")
+
+    asyncio.create_task(run_with_logging())
 
 
 # --- Tool 1 — memblocks_list_blocks ---
@@ -293,8 +317,7 @@ async def memblocks_set_block(params: SetBlockInput, ctx: Context) -> str:
     """Activate a memory block, making it the target for all subsequent memory operations.
 
     Validates that the block exists and belongs to the configured user before
-    activating it. The active block ID is persisted to
-    ~/.config/memblocks/active_block.json so connected clients share state.
+    activating it.
 
     Returns a JSON object with:
       - block_id (str): the newly activated block ID
@@ -377,60 +400,46 @@ async def memblocks_store_semantic(params: StoreSemanticInput, ctx: Context) -> 
       - Task-specific data (e.g. API keys discussed, endpoints found, configs)
       - Any fact best retrieved by topic keyword in a future session
 
-    Runs the input through PS1 (extraction) and PS2 (conflict resolution) pipelines.
 
     Input:
       - fact (str): Plain text fact or knowledge to store
 
     Returns a JSON object with:
-      - message (str): Success confirmation
-      - count (int): Number of semantic memory units stored
-      - operations (list): List of operations performed (ADD/UPDATE/DELETE)
+      - status (str): "accepted" - storage is scheduled, not yet complete
+      - message (str): Confirmation that storage was accepted
     """
     logger.info(f"memblocks_store_semantic: fact={params.fact[:80]!r}")
     client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
 
-    # Check for active block
+    # Check for active block (synchronous validation)
     block_id, error = _active_block_id_or_error()
     if error:
         logger.warning(f"memblocks_store_semantic: no active block — {error}")
         raise ToolError(error)
 
-    # Get the block
+    # Get the block (synchronous precondition)
     block = await client.get_block(block_id)
     if block is None:
         logger.warning(f"memblocks_store_semantic: block not found: {block_id}")
         raise ToolError(f"Block '{block_id}' not found.")
 
-    # Wrap fact as messages for PS1 extraction
+    # Wrap fact as messages for extraction
     messages = [{"role": "user", "content": params.fact}]
 
-    # PS1: Extract semantic memories
-    logger.debug("memblocks_store_semantic: running PS1 extraction")
-    extracted = await block._semantic.extract(messages)
-    logger.info(f"memblocks_store_semantic: PS1 extracted {len(extracted)} memories")
+    # Dispatch background task using extract_and_store convenience method
+    _dispatch_background_task(
+        block._semantic.extract_and_store(messages),
+        task_name=f"semantic_extract_and_store(block={block_id})",
+        error_logger=logger,
+    )
 
-    # PS2: Store each memory with conflict resolution
-    operations = []
-    for i, memory in enumerate(extracted):
-        logger.debug(
-            f"memblocks_store_semantic: PS2 storing memory {i + 1}/{len(extracted)}: {str(memory)[:80]}"
-        )
-        ops = await block._semantic.store(memory)
-        logger.info(
-            f"memblocks_store_semantic: PS2 operations for memory {i + 1}: {[op.operation for op in ops]}"
-        )
-        operations.extend(ops)
-
+    # Return immediate accepted response
     result = {
-        "message": "Stored to semantic memory",
-        "count": len(extracted),
-        "operations": [
-            {"type": op.operation, "memory_id": str(op.memory_id)} for op in operations
-        ],
+        "status": "accepted",
+        "message": "Semantic memory storage accepted - processing in background",
     }
     logger.info(
-        f"memblocks_store_semantic: done — {len(extracted)} extracted, {len(operations)} operations"
+        f"memblocks_store_semantic: dispatched background task for block {block_id}"
     )
     return json.dumps(result, indent=2)
 
@@ -480,20 +489,19 @@ async def memblocks_store_to_core(params: StoreToCoreInput, ctx: Context) -> str
       - fact (str): Plain text fact or knowledge to add/update in core memory
 
     Returns a JSON object with:
-      - message (str): Success confirmation
-      - persona_preview (str): First 100 chars of updated persona content
-      - human_preview (str): First 100 chars of updated human content
+      - status (str): "accepted" - storage is scheduled, not yet complete
+      - message (str): Confirmation that storage was accepted
     """
     logger.info(f"memblocks_store_to_core: fact={params.fact[:80]!r}")
     client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
 
-    # Check for active block
+    # Check for active block (synchronous validation)
     block_id, error = _active_block_id_or_error()
     if error:
         logger.warning(f"memblocks_store_to_core: no active block — {error}")
         raise ToolError(error)
 
-    # Get the block
+    # Get the block (synchronous precondition)
     block = await client.get_block(block_id)
     if block is None:
         logger.warning(f"memblocks_store_to_core: block not found: {block_id}")
@@ -503,38 +511,25 @@ async def memblocks_store_to_core(params: StoreToCoreInput, ctx: Context) -> str
     core_block_id = block.core_memory_block_id or block.id
     logger.debug(f"memblocks_store_to_core: core_block_id={core_block_id}")
 
-    # Get existing core memory
-    old_core = await block._core.get(core_block_id)
-    logger.debug(
-        f"memblocks_store_to_core: old_core persona={str(old_core.persona_content)[:60] if old_core else None}"
-    )
-
     # Wrap fact as messages for extraction
     messages = [{"role": "user", "content": params.fact}]
 
-    # Extract new core memory by combining old + new via LLM
-    logger.debug("memblocks_store_to_core: running core extraction LLM")
-    new_core = await block._core.extract(messages, old_core)
+    # Dispatch background task using update convenience method
+    _dispatch_background_task(
+        block._core.update(block_id=core_block_id, messages=messages),
+        task_name=f"core_update(block={core_block_id})",
+        error_logger=logger,
+    )
+
+    # Return immediate accepted response
+    result = {
+        "status": "accepted",
+        "message": "Core memory update accepted - processing in background",
+    }
     logger.info(
-        f"memblocks_store_to_core: extraction done — persona={str(new_core.persona_content)[:60]!r}"
+        f"memblocks_store_to_core: dispatched background task for block {core_block_id}"
     )
-
-    # Save updated core memory
-    await block._core.save(core_block_id, new_core)
-    logger.info("memblocks_store_to_core: core memory saved")
-
-    return json.dumps(
-        {
-            "message": "Core memory updated",
-            "persona_preview": new_core.persona_content[:100]
-            if new_core.persona_content
-            else "",
-            "human_preview": new_core.human_content[:100]
-            if new_core.human_content
-            else "",
-        },
-        indent=2,
-    )
+    return json.dumps(result, indent=2)
 
 
 # --- Tool 6 — memblocks_store (STOR-03) ---
@@ -583,28 +578,24 @@ async def memblocks_store(params: StoreInput, ctx: Context) -> str:
     batch multiple facts into one call; store each meaningful piece separately
     so retrieval stays precise.
 
-    Implementation:
-      Runs PS1 (extraction) + PS2 (conflict resolution) for semantic memory,
-      then runs LLM extraction + save for core memory, sequentially.
 
     Input:
       - fact (str): Plain text fact or knowledge to store
 
     Returns a JSON object with:
-      - message (str): Success confirmation
-      - semantic (dict): Results from semantic storage (count, operations)
-      - core (dict): Results from core memory update (updated, previews)
+      - status (str): "accepted" - storage is scheduled, not yet complete
+      - message (str): Confirmation that storage was accepted
     """
     logger.info(f"memblocks_store: fact={params.fact[:80]!r}")
     client: MemBlocksClient = ctx.request_context.lifespan_context["client"]
 
-    # Check for active block
+    # Check for active block (synchronous validation)
     block_id, error = _active_block_id_or_error()
     if error:
         logger.warning(f"memblocks_store: no active block — {error}")
         raise ToolError(error)
 
-    # Get the block
+    # Get the block (synchronous precondition)
     block = await client.get_block(block_id)
     if block is None:
         logger.warning(f"memblocks_store: block not found: {block_id}")
@@ -613,56 +604,30 @@ async def memblocks_store(params: StoreInput, ctx: Context) -> str:
     # Wrap fact as messages for both extractions
     messages = [{"role": "user", "content": params.fact}]
 
-    # === Semantic Pipeline (PS1 + PS2) ===
-    logger.debug("memblocks_store: running PS1 extraction")
-    extracted = await block._semantic.extract(messages)
-    logger.info(f"memblocks_store: PS1 extracted {len(extracted)} memories")
-
-    semantic_operations = []
-    for i, memory in enumerate(extracted):
-        logger.debug(f"memblocks_store: PS2 storing memory {i + 1}/{len(extracted)}")
-        ops = await block._semantic.store(memory)
-        logger.info(
-            f"memblocks_store: PS2 operations for memory {i + 1}: {[op.operation for op in ops]}"
-        )
-        semantic_operations.extend(ops)
-
-    # === Core Pipeline ===
+    # Determine core_block_id for core update
     core_block_id = block.core_memory_block_id or block.id
     logger.debug(f"memblocks_store: core_block_id={core_block_id}")
 
-    old_core = await block._core.get(core_block_id)
-    logger.debug("memblocks_store: running core extraction LLM")
-    new_core = await block._core.extract(messages, old_core)
-    logger.info(
-        f"memblocks_store: core extraction done — persona={str(new_core.persona_content)[:60]!r}"
+    # Dispatch background task for semantic storage
+    _dispatch_background_task(
+        block._semantic.extract_and_store(messages),
+        task_name=f"semantic_extract_and_store(block={block_id})",
+        error_logger=logger,
     )
 
-    await block._core.save(core_block_id, new_core)
-    logger.info("memblocks_store: core memory saved")
+    # Dispatch background task for core update
+    _dispatch_background_task(
+        block._core.update(block_id=core_block_id, messages=messages),
+        task_name=f"core_update(block={core_block_id})",
+        error_logger=logger,
+    )
 
+    # Return immediate accepted response
     result = {
-        "message": "Stored to both semantic and core memory",
-        "semantic": {
-            "count": len(extracted),
-            "operations": [
-                {"type": op.operation, "memory_id": str(op.memory_id)}
-                for op in semantic_operations
-            ],
-        },
-        "core": {
-            "updated": True,
-            "persona_preview": new_core.persona_content[:100]
-            if new_core.persona_content
-            else "",
-            "human_preview": new_core.human_content[:100]
-            if new_core.human_content
-            else "",
-        },
+        "status": "accepted",
+        "message": "Storage to both semantic and core memory accepted - processing in background",
     }
-    logger.info(
-        f"memblocks_store: done — semantic_ops={len(semantic_operations)}, core_updated=True"
-    )
+    logger.info(f"memblocks_store: dispatched background tasks for block {block_id}")
     return json.dumps(result, indent=2)
 
 
