@@ -1,7 +1,7 @@
 # Virtual environment
 venv/
 env/
-.env
+.venv/
 
 # Python
 __pycache__/
@@ -24,21 +24,33 @@ build/
 .DS_Store
 *.log
 
+# Runtime logs and output directories
+memblocks_cli_output/
+memblocks_mcp_logs/
 operation_log.json
 operation_summary.json
 retrieval_log.json
 processing_history.json
-check_retrieval.bat
-memblocks_lib\docs
-memblocks_lib\docs\RETRIEVAL_DATA_FLOW_VALIDATION.md
-memblocks_lib\docs\SEMANTIC_RETRIEVAL_ENHANCEMENT.md
-memblocks_lib\docs\TESTING_GUIDE.md
-memblocks_lib\docs
-memblocks_lib\docs\RETRIEVAL_DATA_FLOW_VALIDATION.md
-memblocks_lib\docs\SEMANTIC_RETRIEVAL_ENHANCEMENT.md
-memblocks_lib\docs\TESTING_GUIDE.md
-verify_retrieval.py
 llm_usage.json
+
+# Temporary files
+check_retrieval.bat
+verify_retrieval.py
+nul
+
+# Development artifacts (removed from tracking)
 .planning/
 .agents/
-nul
+deprecated/
+gemini_model_list.py
+
+# Utility scripts
+memblocks_lib\docs
+memblocks_lib\docs\RETRIEVAL_DATA_FLOW_VALIDATION.md
+memblocks_lib\docs\SEMANTIC_RETRIEVAL_ENHANCEMENT.md
+memblocks_lib\docs\TESTING_GUIDE.md
+
+# Python caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
