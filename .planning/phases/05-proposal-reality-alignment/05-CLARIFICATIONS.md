@@ -158,6 +158,18 @@ This ensures no assumption-based wording is introduced without explicit confirma
 
 ---
 
+## Carry-Forward Notes (Plan 05-02)
+
+- **[CLARIFY-REQ:001]** kept unchanged in `main.tex` (Abstract, para 2). Carry forward to Plan 05-03 for explicit scope wording on recursive memory evolution.
+- **[CLARIFY-REQ:002]** kept unchanged in `main.tex` (Abstract, para 2). Carry forward to Plan 05-03 to resolve multi-user collaboration wording against single-user MCP deployment boundary.
+- **[CLARIFY-REQ:003]** kept unchanged in `main.tex` (Section 1.2). Carry forward to Phase 6 drafting pass if no in-session clarification is provided in Phase 5.
+- **[CLARIFY-REQ:004]** kept unchanged in `main.tex` (Section 1.3 Objective 6). Carry forward to Plan 05-03 for objective-status wording (fulfilled/partial/future work).
+- **[CLARIFY-REQ:005]** kept unchanged in `main.tex` (Section 3.3). Carry forward to Plan 05-03 to scope sliding-window wording to session-based CLI behavior.
+
+All unresolved clarification-tagged segments remain unchanged per fallback rule; no assumption-based rewrites were applied.
+
+---
+
 ## Usage Instructions for Downstream Editing
 
 1. Before finalizing wording for any `[CLARIFY-REQ:XXX]` tagged segment:
