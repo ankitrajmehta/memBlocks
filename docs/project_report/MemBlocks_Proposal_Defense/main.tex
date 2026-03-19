@@ -67,9 +67,9 @@ We would like to express their sincere gratitude to the \textbf{Department of El
 
 \section*{Abstract}
 \addcontentsline{toc}{section}{Abstract}
-MemBlocks is a modular memory architecture for Large Language Models (LLMs) that addresses fixed context windows and limitations of monolithic Retrieval-Augmented Generation systems. It organizes memory into independent, attachable blocks representing distinct domains such as personal, academic, project, or collaborative contexts. Each block contains structured components including core attributes, event and factual memory, immutable resources, and recursive summaries for compressed conversational state.
+MemBlocks is a modular memory architecture for Large Language Models (LLMs) that addresses fixed context windows and limitations of monolithic Retrieval-Augmented Generation systems. It organizes memory into independent, attachable blocks representing distinct domains such as personal, academic, project, or collaborative contexts. Each block contains structured components including core attributes, semantic memory, immutable resources, and episodic summaries for compressed conversational state.
 
-The system employs hybrid semantic and metadata-based retrieval to selectively assemble relevant context, reducing retrieval noise and improving scalability. A recursive memory evolution mechanism updates and refines stored knowledge while maintaining coherence and avoiding redundancy. MemBlocks supports dynamic context switching, user-controlled memory exposure, and privacy-preserving multi-user collaboration. Implemented using Groq LLM APIs, Qdrant, Ollama embeddings, and LangChain, the architecture provides a scalable and reliable foundation for long-term, multi-domain AI agents.
+The system employs hybrid semantic and metadata-based retrieval to selectively assemble relevant context, reducing retrieval noise and improving scalability. A recursive memory evolution mechanism updates and refines stored knowledge while maintaining coherence and avoiding redundancy. MemBlocks supports dynamic context switching, user-controlled memory exposure, and privacy-preserving multi-user collaboration. Implemented as a library-first architecture centered on MemBlocksClient, with Groq LLM APIs, Qdrant, Ollama embeddings, and MCP integration, the system provides a scalable and reliable foundation for long-term, multi-domain AI agents.
 
 \textbf{Keywords:} Large Language Models, Memory Management, Retrieval-Augmented Generation, Modular Architecture, Context Management, AI Agents, Vector Databases, Semantic Memory
 
@@ -152,7 +152,7 @@ The specific objectives are:
 \begin{enumerate}
     \item To design a modular memory block architecture where each block represents a separate context such as personal data, project knowledge, learning material, or shared team information.
     
-    \item To organize each memory block into structured sections, including core memory (essential facts), semantic memory (knowledge and events), recursive summary, and resources (documents).
+    \item To organize each memory block into structured sections, including core memory (essential facts), semantic memory (knowledge and events), episodic memory (conversation summaries), and resources (documents).
     
     \item To enable dynamic attachment and detachment of memory blocks, so that only relevant contexts are active during a conversation.
     
@@ -276,11 +276,11 @@ Persistent memory introduces significant vulnerabilities, particularly context l
 
 \section{Methodology}
 
-This chapter presents the comprehensive design and implementation methodology for the Memory Blocks system. The proposed architecture addresses fundamental limitations in current Large Language Model (LLM) memory systems by introducing a modular, hierarchical approach to context management. Unlike traditional Retrieval-Augmented Generation (RAG) systems that treat all information uniformly in a single vector database, or systems like MemGPT and Mem0 that provide limited memory differentiation, Memory Blocks implements distinct memory containers with specialized storage semantics, retrieval mechanisms, and update protocols. This section details the system architecture, algorithmic workflows, data structures, and implementation technologies that collectively enable composable, context-aware memory management for AI agents.
+This chapter presents the comprehensive design and implementation methodology for the MemBlocks system. The architecture addresses fundamental limitations in current Large Language Model (LLM) memory systems by introducing a modular, hierarchical approach to context management. Unlike traditional Retrieval-Augmented Generation (RAG) systems that treat all information uniformly in a single vector database, or systems like MemGPT and Mem0 that provide limited memory differentiation, MemBlocks uses a library-first implementation centered on MemBlocksClient with distinct memory containers, section-specific retrieval, and structured update workflows. This section details the system architecture, algorithmic workflows, data structures, and implementation technologies that collectively enable composable, context-aware memory management for AI agents.
 
 \subsection{Feasibility Study}
 
-The MemBlocks project is technically feasible due to recent advancements in Large Language Models, vector databases, and agent orchestration frameworks. The system builds upon reliable and well-documented technologies such as Groq-hosted LLM APIs for inference, Qdrant for high-performance vector storage, Ollama for local embedding generation, and LangChain for managing agent workflows. These tools provide the necessary capabilities for implementing modular memory containers, semantic retrieval, and metadata-driven memory management without requiring the development of core ML models from scratch.
+The MemBlocks project is technically feasible due to recent advancements in Large Language Models, vector databases, and practical integration tooling. The system builds upon reliable and well-documented technologies such as Groq-hosted LLM APIs for inference, Qdrant for high-performance vector storage, Ollama for local embedding generation, and a Python client library interface (MemBlocksClient) with optional MCP integration for agent-facing workflows. These tools provide the necessary capabilities for implementing modular memory containers, semantic retrieval, and metadata-driven memory management without requiring the development of core ML models from scratch.
 
 From an operational and economic perspective, the project is feasible within the constraints of our academic minor project. The modular architecture enables incremental development and testing of individual memory blocks, reducing system complexity and risk. Additionally, the reliance on open-source frameworks and lightweight infrastructure minimizes deployment costs and resource requirements. The proposed system can be implemented, evaluated, and extended within the available time frame, making it a practical and sustainable solution for research and prototyping purposes.
 
@@ -300,7 +300,7 @@ Memory Block Creation & The system must allow creation of independent memory blo
 \hline
 Dynamic Block Attachment & Memory blocks must be attachable and detachable at runtime, enabling context switching without restarting the agent. \\
 \hline
-Sectioned Memory Structure & Each memory block must internally support structured sections such as core memory, event \& factual memory, resources, and recursive summaries. \\
+Sectioned Memory Structure & Each memory block must internally support structured sections such as core memory, semantic memory, episodic memory, and resources. \\
 \hline
 Core Memory Persistence & The system must maintain a compact core memory containing high-priority user and agent information that is always passed to the LLM. \\
 \hline
@@ -352,16 +352,16 @@ Governance \& Traceability & Each memory item must retain metadata for tracking 
 
 \subsection{System Architecture}
 
-The Memory Blocks architecture follows a layered design that separates concerns between long-term memory storage, retrieval processing, and active agent context management. Figure~\ref{fig:memBlocks_diagram1} illustrates the high-level architecture of the Memory Blocks system. The design consists of three primary layers: \textbf{the Memory Space Layer}, which contains multiple user-defined containers; \textbf{the Processing Layer}, which orchestrates retrieval and update operations; and \textbf{the User Interaction Layer}, which manages the conversational interface and integrates context from attached memory blocks. 
+The MemBlocks architecture is library-first, with \texttt{MemBlocksClient} as the primary integration surface for memory storage, retrieval, and update operations. Figure~\ref{fig:memBlocks_diagram1} illustrates the high-level architecture and supporting interfaces, including optional CLI and MCP integration patterns.
 
-Memory Block Repositories serve as independent storage units, each maintaining its own organizational structure and access semantics. Unlike monolithic RAG systems, where documents, chat history, and user preferences co-exist in a single vector database, Memory Blocks segregates information into functionally distinct containers. Each container encapsulates multiple sections, including Resources (immutable user documents and chat transcripts), Core Memory (persistent persona and user attributes), Event and Factual Memory, and Recursive Summary (compressed conversation state). This segregation reduces retrieval noise and enables fine-grained access control.
+Memory Block Repositories serve as independent storage units, each maintaining its own organizational structure and access semantics. Unlike monolithic RAG systems, where documents, chat history, and user preferences co-exist in a single vector database, MemBlocks segregates information into functionally distinct containers. Each container encapsulates multiple sections, including Resources (immutable user documents and chat transcripts), Core Memory (persistent persona and user attributes), Semantic Memory, and Episodic Memory (conversation summaries). This segregation reduces retrieval noise and enables fine-grained access control.
 
 
-The retrieval layer serves as the bridge between long-term memory blocks and the agent's active context, ensuring that only relevant information is provided to the LLM. It operates exclusively on attached memory blocks, accessing their structured sections: core memory, event and factual memory, resources, and recursive summaries using a hybrid approach that combines semantic similarity over vector embeddings with metadata-based filtering such as recency, confidence, visibility, and type. Core memory and recursive summaries are always included, while event and factual memories are ranked using a composite scoring strategy. Finally, the processed context is merged with the sliding window of recent conversation turns, producing a compact, contextually rich input for the answering LLM. This design maintains modularity, reduces retrieval noise, enforces memory isolation across blocks and sections, and ensures low-latency, accurate context assembly for effective agent reasoning.
+The retrieval layer serves as the bridge between long-term memory blocks and the agent's active context, ensuring that only relevant information is provided to the LLM. It operates exclusively on attached memory blocks, accessing their structured sections: core memory, semantic memory, episodic memory, and resources using a hybrid approach that combines semantic similarity over vector embeddings with metadata-based filtering such as recency, confidence, visibility, and type. Core memory and episodic summaries are always included, while semantic memories are ranked using a composite scoring strategy. Finally, the processed context is merged with the sliding window of recent conversation turns, producing a compact, contextually rich input for the answering LLM. This design maintains modularity, reduces retrieval noise, enforces memory isolation across blocks and sections, and ensures low-latency, accurate context assembly for effective agent reasoning.
 
 The Sliding Window Manager maintains immediate conversational context by storing recent message exchanges. This component implements a bounded buffer that retains the last N messages, providing the LLM with short-term conversational coherence. When the window reaches capacity, the oldest messages are evicted and processed by the Recursive Summary component for long-term compression.
 
-The Agent (async) operates as an asynchronous orchestrator that coordinates memory updates and retrieval operations. Following a set of user-assistant exchange, the agent triggers memory writing processes, including Core Memory updates, Event and Factual Memory additions, and Recursive Summary evolution. These operations execute in parallel with user interaction, ensuring minimal latency impact on response generation.
+The \texttt{MemBlocksClient} (async) operates as an asynchronous orchestrator that coordinates memory updates and retrieval operations. Following a set of user-assistant exchange, the client triggers memory writing processes, including Core Memory updates, Semantic Memory additions, and Episodic Memory summarization. These operations execute in parallel with user interaction, ensuring minimal latency impact on response generation.
 
 Finally, the Large Language Model serves as the reasoning engine, receiving context assembled from retrieved memory blocks, sliding window history, and current user input. The LLM generates responses and, critically, produces structured outputs that drive memory updates through specialized prompts described in subsequent sections.
 
@@ -402,9 +402,9 @@ The Core Memory section stores high-priority, persistent information structured 
 
 Core Memory implements a capacity management mechanism: when content exceeds 90\% of the allocated token budget, the system triggers a controlled rewrite process. This process uses an LLM to compress and consolidate the memory while preserving all critical information.
 
-\subsubsection{Event and Factual Memory Section}
+\subsubsection{Semantic Memory Section}
 
-The Event and Factual Memory section stores extracted events, facts, and opinions about the user or the world. Event memories capture time-stamped interactions or activities, while factual memories maintain general knowledge, relationships, or concepts. Each memory item includes key metadata such as type, timestamp, source, confidence, and entities to support efficient querying, reasoning, and temporal tracking.
+The Semantic Memory section stores extracted events, facts, and opinions about the user or the world. Each memory item includes key metadata such as type, timestamp, source, confidence, and entities to support efficient querying, reasoning, and temporal tracking.
 
 \textbf{Data Model.} Each memory entry $m_i$ comprises the following fields:
 
@@ -428,7 +428,7 @@ The Event and Factual Memory section stores extracted events, facts, and opinion
 
 Additionally, each memory maintains metadata including memory\_id, message\_ids (linking to source conversations), status (active, archived, invalid), and  linked\_memory\_ids (linking to semantically related prior memories).
 
-\textbf{Memory Addition Workflow For Event and Factual Memory.} When a new interaction $I_i$ occurs at time $t_i$, the system executes a five-step pipeline:
+\textbf{Memory Addition Workflow For Semantic Memory.} When a new interaction $I_i$ occurs at time $t_i$, the system executes a five-step pipeline:
 
 \begin{enumerate}
     \item \textbf{Structured Note Construction.} An LLM processes the interaction using prompt $P_{s1}$ (detailed in Section 3.4) to generate keywords $K_i$, contextual description $c_i$, type classification, and entities. This structured extraction ensures consistent indexing across all memory entries.
@@ -488,7 +488,7 @@ Within activated containers, retrieval proceeds section by section:
 
 \textbf{Core Memory Retrieval.} Core Memory is always included in full, as it contains high-priority persistent information that should influence every interaction. No ranking or filtering applies to Core Memory; the entire persona and human blocks are injected into the system prompt.
 
-\textbf{Event and Factual Memory Retrieval.} Retrieval from this section uses hybrid search over memory embeddings. The query is expanded using query expansion/HyDE techniques, which is then embedded using the same Nomic Embed Text model, and Qdrant performs hybrid search with BM25 and approximate nearest neighbor search to retrieve candidates. Results are filtered to exclude memories with status ``invalid'' or ``archived'' unless explicitly requested. Additional metadata filters can be applied based on tags, entities, or time ranges when appropriate. These results undergo fusion (Reciprocal Rank Fusion (RRF)) and then reranking using a reranker (Cross-encoder based). Top-k results from these are now ready to be passed to next stage.
+\textbf{Semantic Memory Retrieval.} Retrieval from this section uses hybrid search over memory embeddings. The query is expanded using query expansion/HyDE techniques, which is then embedded using the same Nomic Embed Text model, and Qdrant performs hybrid search with BM25 and approximate nearest neighbor search to retrieve candidates. Results are filtered to exclude memories with status ``invalid'' or ``archived'' unless explicitly requested. Additional metadata filters can be applied based on tags, entities, or time ranges when appropriate. These results undergo fusion (Reciprocal Rank Fusion (RRF)) and then reranking using a reranker (Cross-encoder based). Top-k results from these are now ready to be passed to next stage.
 
 \textbf{Resources Retrieval.} Resources are retrieved using hybrid search over document embeddings when the query suggests reference to uploaded files or historical transcripts. This section's retrieval is more conservative, activating only when the query explicitly references documents or when Core/Event memory retrieval yields insufficient context.
 
@@ -497,7 +497,7 @@ Within activated containers, retrieval proceeds section by section:
 
 \subsubsection{Context Assembly}
 
-After retrieval and ranking, the system assembles the final context for LLM invocation. The assembly follows a structured template that clearly delineates different information sources. Core Memory is placed in the system prompt within XML tags. The Recursive Summary follows in its own tagged section. Retrieved Event and Factual memories are presented in ranked order, each with metadata indicating type, confidence, and timestamp. The sliding window history is appended, followed by the current user input. This structured assembly ensures the LLM can distinguish between persistent facts, recent context, historical events, and current queries, enabling more accurate and context-aware responses.
+After retrieval and ranking, the system assembles the final context for LLM invocation. The assembly follows a structured template that clearly delineates different information sources. Core Memory is placed in the system prompt within XML tags. The Recursive Summary follows in its own tagged section. Retrieved semantic memories are presented in ranked order, each with metadata indicating type, confidence, and timestamp. The sliding window history is appended, followed by the current user input. This structured assembly ensures the LLM can distinguish between persistent facts, recent context, historical events, and current queries, enabling more accurate and context-aware responses.
 \clearpage
 \section{Proposed System design}
 
