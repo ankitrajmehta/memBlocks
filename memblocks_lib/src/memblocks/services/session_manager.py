@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from memblocks.services.core_memory import CoreMemoryService
     from memblocks.services.memory_pipeline import MemoryPipeline
     from memblocks.services.semantic_memory import SemanticMemoryService
-    from memblocks.services.transparency import OperationLog
+    from memblocks.services.transparency import LLMUsageTracker, OperationLog
     from memblocks.storage.mongo import MongoDBAdapter
     from memblocks.config import MemBlocksConfig
     from memblocks.llm.base import LLMProvider
@@ -47,6 +47,7 @@ class SessionManager:
         ps2_llm: Optional["LLMProvider"] = None,
         retrieval_llm: Optional["LLMProvider"] = None,
         summary_llm: Optional["LLMProvider"] = None,
+        llm_usage_tracker: Optional["LLMUsageTracker"] = None,
     ) -> None:
         self._mongo = mongo_adapter
         self._ps1_llm = ps1_llm
@@ -63,6 +64,7 @@ class SessionManager:
         self._bus = event_bus
         self._history = processing_history
         self._retrieval_log = retrieval_log
+        self._llm_usage = llm_usage_tracker
 
     # ------------------------------------------------------------------ #
     # Session lifecycle
@@ -153,6 +155,7 @@ class SessionManager:
             processing_history=self._history,
             operation_log=self._log,
             event_bus=self._bus,
+            llm_usage_tracker=self._llm_usage,
         )
 
     def _make_session(
@@ -183,4 +186,5 @@ class SessionManager:
             memory_window_limit=self._memory_window_limit,
             keep_last_n=self._keep_last_n,
             created_at=created_at,
+            llm_usage_tracker=self._llm_usage,
         )

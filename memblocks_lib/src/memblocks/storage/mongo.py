@@ -518,6 +518,36 @@ class MongoDBAdapter:
     # UTILITY
     # ------------------------------------------------------------------
 
+    async def update_block_llm_usage(
+        self, block_id: str, usage_dict: Dict[str, Any]
+    ) -> bool:
+        """
+        Persist cumulative LLM usage statistics into the block document.
+
+        Uses a MongoDB ``$set`` so that repeated calls accumulate the latest
+        snapshot without replacing the whole document.
+
+        Args:
+            block_id: The block identifier (matched on ``meta_data.id``).
+            usage_dict: Serialisable dict produced by
+                ``LLMUsageTracker.get_block_summary(block_id)`` — keyed by
+                ``LLMCallType`` value strings.
+
+        Returns:
+            True if a document was matched (and possibly updated).
+        """
+        result = await self.blocks.update_one(
+            {"meta_data.id": block_id},
+            {"$set": {"meta_data.llm_usage": usage_dict}},
+        )
+        self._record_op(
+            "memory_blocks",
+            "update",
+            document_id=block_id,
+            payload_summary=f"update llm_usage for block {block_id}",
+        )
+        return result.matched_count > 0
+
     async def close(self) -> None:
         """Close the underlying Motor client connection."""
         if self._client:

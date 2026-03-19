@@ -13,7 +13,11 @@ if TYPE_CHECKING:
     from memblocks.llm.base import LLMProvider
     from memblocks.services.core_memory import CoreMemoryService
     from memblocks.services.semantic_memory import SemanticMemoryService
-    from memblocks.services.transparency import OperationLog, ProcessingHistory
+    from memblocks.services.transparency import (
+        LLMUsageTracker,
+        OperationLog,
+        ProcessingHistory,
+    )
 
 logger = get_logger(__name__)
 
@@ -45,6 +49,7 @@ class MemoryPipeline:
         processing_history: Optional["ProcessingHistory"] = None,
         operation_log: Optional["OperationLog"] = None,
         event_bus: Optional[Any] = None,
+        llm_usage_tracker: Optional["LLMUsageTracker"] = None,
     ) -> None:
         """
         Args:
@@ -55,6 +60,8 @@ class MemoryPipeline:
             processing_history: Transparency — records pipeline runs.
             operation_log: Transparency — records DB writes.
             event_bus: Transparency — publishes pipeline events.
+            llm_usage_tracker: Optional tracker; when provided, a per-run
+                usage snapshot is captured in the ``PipelineRunEntry``.
         """
         self._semantic = semantic_memory_service
         self._core = core_memory_service
@@ -63,6 +70,7 @@ class MemoryPipeline:
         self._history = processing_history
         self._log = operation_log
         self._bus = event_bus
+        self._llm_usage = llm_usage_tracker
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -96,6 +104,7 @@ class MemoryPipeline:
             New recursive summary string.
         """
         run_id = f"pipeline_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}"
+        run_start = datetime.utcnow()  # snapshot for per-run usage tracking
 
         if self._history:
             self._history.record_start(
@@ -147,6 +156,15 @@ class MemoryPipeline:
                 messages_processed=len(messages),
                 operations=all_operations,
             )
+
+            # Capture per-run LLM usage snapshot
+            run_llm_usage: Dict[str, Any] = {}
+            if self._llm_usage is not None:
+                raw_summary = self._llm_usage.get_run_summary(since=run_start)
+                run_llm_usage = {
+                    ct: summary.model_dump() for ct, summary in raw_summary.items()
+                }
+
             if self._history:
                 self._history.record_complete(
                     run_id,
@@ -154,6 +172,7 @@ class MemoryPipeline:
                         "summary_generated": bool(new_summary),
                         "core_memory_updated": True,
                         "semantic_ops": len(all_operations),
+                        "llm_usage": run_llm_usage,
                     },
                 )
             if self._bus:

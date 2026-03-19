@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from memblocks import MemBlocksClient, MemBlocksConfig
 from memblocks.llm.task_settings import LLMSettings, LLMTaskSettings
@@ -61,6 +63,77 @@ async def save_transparency_data(client: MemBlocksClient) -> None:
         history_file = LOG_DIR / "processing_history.json"
         with open(history_file, "w") as f:
             json.dump(runs_data, f, indent=2, default=str)
+
+    usage_tracker = client.get_llm_usage()
+    summary = usage_tracker.get_summary()
+    totals = usage_tracker.get_totals()
+    if totals.request_count > 0:
+        usage_data = {
+            "summary": {k: v.model_dump(mode="json") for k, v in summary.items()},
+            "totals": totals.model_dump(mode="json"),
+        }
+        usage_file = LOG_DIR / "llm_usage.json"
+        with open(usage_file, "w") as f:
+            json.dump(usage_data, f, indent=2, default=str)
+
+
+def display_token_usage(client: MemBlocksClient, since: Optional[datetime] = None) -> None:
+    """Log a summary of token usage and optional recent individual records to a file."""
+    usage_tracker = client.get_llm_usage()
+    log_file = LOG_DIR / "token_usage.log"
+
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write("\n" + "=" * 70 + "\n")
+        f.write(f"ENTRY AT {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
+        f.write("=" * 70 + "\n")
+
+        # 1. Individual recent records if requested
+        if since:
+            recent_records = usage_tracker.get_records(limit=20)
+            recent_records = [r for r in recent_records if r.timestamp >= since]
+
+            if recent_records:
+                f.write("\n🚀 RECENT LLM CALLS\n")
+                f.write("─" * 70 + "\n")
+                f.write(f"{'Time':<8} | {'Type':<15} | {'Model':<20} | {'Tokens':>6} | {'Lat':>6}\n")
+                f.write("-" * 70 + "\n")
+                for r in recent_records:
+                    time_str = r.timestamp.strftime("%H:%M:%S")
+                    call_type_str = r.call_type.value if hasattr(r.call_type, "value") else str(r.call_type)
+                    f.write(f"{time_str:<8} | {call_type_str:<15} | {r.model[:20]:<20} | {r.total_tokens:>6} | {r.latency_ms:>5.0f}ms\n")
+                f.write("─" * 70 + "\n")
+
+        # 2. Cumulative summary
+        summary = usage_tracker.get_summary()
+        totals = usage_tracker.get_totals()
+
+        if summary or totals.request_count > 0:
+            f.write("\n💰 CUMULATIVE LLM USAGE\n")
+            f.write("─" * 70 + "\n")
+            f.write(
+                f"{'Call Type':<20} | {'Reqs':>4} | {'In':>8} | {'Out':>8} | {'Total':>8} | {'Avg Lat':>8}\n"
+            )
+            f.write("-" * 70 + "\n")
+
+            for call_type, stats in summary.items():
+                f.write(
+                    f"{call_type:<20} | {stats.request_count:>4} | "
+                    f"{stats.total_input_tokens:>8} | {stats.total_output_tokens:>8} | "
+                    f"{stats.total_tokens:>8} | {stats.avg_latency_ms:>7.0f}ms\n"
+                )
+
+            f.write("-" * 70 + "\n")
+            f.write(
+                f"{'GRAND TOTAL':<20} | {totals.request_count:>4} | "
+                f"{totals.total_input_tokens:>8} | {totals.total_output_tokens:>8} | "
+                f"{totals.total_tokens:>8} | {totals.avg_latency_ms:>7.0f}ms\n"
+            )
+            f.write("─" * 70 + "\n")
+        
+        f.write("\n")
+
+    # Brief hint in terminal
+    print(f"📊 Token usage logged to: {log_file.name}")
 
 
 def display_retrieval_summary(client: MemBlocksClient) -> None:
@@ -128,7 +201,7 @@ async def _run_cli() -> None:
         config = MemBlocksConfig(llm_settings=LLMSettings(
                 default=LLMTaskSettings(
                     provider="groq",
-                    model="meta-llama/llama-4-maverick-17b-128e-instruct"
+                    model="moonshotai/kimi-k2-instruct-0905"
                 ),
                 retrieval=LLMTaskSettings(
                     provider="groq",
@@ -140,7 +213,7 @@ async def _run_cli() -> None:
                 ),
                 ps2_conflict_resolution=LLMTaskSettings(
                     provider="groq",
-                    model="meta-llama/llama-4-maverick-17b-128e-instruct"
+                    model="moonshotai/kimi-k2-instruct-0905"
                 ),
                 core_memory_extraction=LLMTaskSettings(
                     provider="groq",
@@ -202,6 +275,16 @@ async def _run_cli() -> None:
                     _last_retrieval_timestamp = getattr(last, "timestamp", None)
                     # Display immediately since save is async
                     display_retrieval_summary(client)
+
+        if event_name == "on_pipeline_completed":
+            asyncio.create_task(save_transparency_data(client))
+            print("\n✅ Memory pipeline completed.")
+            
+            # Show tokens for this specific run
+            history = client.get_processing_history()
+            last_run = history.get_last_run()
+            pipe_since = last_run.timestamp_started if last_run else None
+            display_token_usage(client, since=pipe_since)
 
     events = [
         "on_memory_extracted",
@@ -271,6 +354,7 @@ async def _run_cli() -> None:
     print("💬 Chat with your assistant")
     print("   Type 'quit' to exit")
     print("   Type 'logs' to view latest retrieval details")
+    print("   Type 'tokens' to view cumulative LLM usage")
     print("=" * 70 + "\n")
 
     try:
@@ -288,11 +372,17 @@ async def _run_cli() -> None:
             # Special command to show retrieval logs
             if user_input.lower() == "logs":
                 display_retrieval_summary(client)
+                display_token_usage(client)
+                continue
+
+            if user_input.lower() == "tokens":
+                display_token_usage(client)
                 continue
 
             try:
                 print("🔄 Retrieving memories...")
                 start_time = asyncio.get_event_loop().time()
+                interaction_dt = datetime.utcnow()
 
                 # Retrieve memory context
                 context = await block.retrieve(user_input)
@@ -326,6 +416,9 @@ async def _run_cli() -> None:
 
                 print(f"\n🤖 Assistant: {ai_response}\n")
 
+                # Show tokens for this interaction
+                display_token_usage(client, since=interaction_dt)
+
                 # Persist turn in background
                 asyncio.create_task(_persist_turn(session, user_input, ai_response))
 
@@ -339,6 +432,7 @@ async def _run_cli() -> None:
     finally:
         print("\n💾 Flushing final transparency data...")
         await save_transparency_data(client)
+        display_token_usage(client)
         print("🔌 Closing connections...")
         await client.close()
         print("\n👋 Goodbye!\n")

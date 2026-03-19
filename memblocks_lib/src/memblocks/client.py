@@ -42,8 +42,10 @@ from memblocks.services.block_manager import BlockManager
 from memblocks.services.core_memory import CoreMemoryService
 from memblocks.services.session_manager import SessionManager
 from memblocks.services.user_manager import UserManager
+from memblocks.models.transparency import LLMCallType
 from memblocks.services.transparency import (
     EventBus,
+    LLMUsageTracker,
     OperationLog,
     ProcessingHistory,
     RetrievalLog,
@@ -58,6 +60,8 @@ if TYPE_CHECKING:
 def _build_provider(
     task_settings: LLMTaskSettings,
     config: MemBlocksConfig,
+    usage_tracker: Optional["LLMUsageTracker"] = None,
+    call_type: "LLMCallType" = LLMCallType.CONVERSATION,
 ) -> "LLMProvider":
     """Build the correct ``LLMProvider`` for a single task's settings.
 
@@ -66,6 +70,10 @@ def _build_provider(
             OpenRouter-specific fields for this task.
         config: Full library config (used to extract API keys and Arize
             monitoring fields).
+        usage_tracker: Optional ``LLMUsageTracker`` that the provider will
+            record every call into.
+        call_type: ``LLMCallType`` enum member identifying which pipeline
+            task this provider is serving. Defaults to ``CONVERSATION``.
 
     Returns:
         Configured ``LLMProvider`` instance.
@@ -88,6 +96,8 @@ def _build_provider(
             arize_space_id=config.arize_space_id,
             arize_api_key=config.arize_api_key,
             arize_project_name=config.arize_project_name,
+            usage_tracker=usage_tracker,
+            call_type=call_type,
         )
 
     elif provider_name == "gemini":
@@ -102,6 +112,8 @@ def _build_provider(
             arize_space_id=config.arize_space_id,
             arize_api_key=config.arize_api_key,
             arize_project_name=config.arize_project_name,
+            usage_tracker=usage_tracker,
+            call_type=call_type,
         )
 
     elif provider_name == "openrouter":
@@ -118,6 +130,8 @@ def _build_provider(
             arize_space_id=config.arize_space_id,
             arize_api_key=config.arize_api_key,
             arize_project_name=config.arize_project_name,
+            usage_tracker=usage_tracker,
+            call_type=call_type,
         )
 
     else:
@@ -154,6 +168,7 @@ class MemBlocksClient:
         operation_log:      OperationLog
         retrieval_log:      RetrievalLog
         processing_history: ProcessingHistory
+        llm_usage:          LLMUsageTracker (token usage + latency per call type)
     """
 
     def __init__(
@@ -188,6 +203,13 @@ class MemBlocksClient:
             config, self.embeddings
         )
 
+        # ---- Transparency layer ----
+        self.event_bus: EventBus = EventBus()
+        self.operation_log: OperationLog = OperationLog()
+        self.retrieval_log: RetrievalLog = RetrievalLog()
+        self.processing_history: ProcessingHistory = ProcessingHistory()
+        self.llm_usage: LLMUsageTracker = LLMUsageTracker()
+
         # ---- Resolve per-task LLM settings ----
         llm_settings: LLMSettings = config.resolved_llm_settings
 
@@ -196,32 +218,44 @@ class MemBlocksClient:
         # receive distinct instances — this is safe because all providers are
         # stateless beyond their configuration.
         self.conversation_llm: "LLMProvider" = _build_provider(
-            llm_settings.for_task("conversation"), config
+            llm_settings.for_task("conversation"),
+            config,
+            usage_tracker=self.llm_usage,
+            call_type=LLMCallType.CONVERSATION,
         )
         # Backward-compatible alias
         self.llm: "LLMProvider" = self.conversation_llm
 
         _ps1_llm: "LLMProvider" = _build_provider(
-            llm_settings.for_task("ps1_semantic_extraction"), config
+            llm_settings.for_task("ps1_semantic_extraction"),
+            config,
+            usage_tracker=self.llm_usage,
+            call_type=LLMCallType.PS1_EXTRACTION,
         )
         _ps2_llm: "LLMProvider" = _build_provider(
-            llm_settings.for_task("ps2_conflict_resolution"), config
+            llm_settings.for_task("ps2_conflict_resolution"),
+            config,
+            usage_tracker=self.llm_usage,
+            call_type=LLMCallType.PS2_CONFLICT,
         )
         _retrieval_llm: "LLMProvider" = _build_provider(
-            llm_settings.for_task("retrieval"), config
+            llm_settings.for_task("retrieval"),
+            config,
+            usage_tracker=self.llm_usage,
+            call_type=LLMCallType.RETRIEVAL,
         )
         _core_llm: "LLMProvider" = _build_provider(
-            llm_settings.for_task("core_memory_extraction"), config
+            llm_settings.for_task("core_memory_extraction"),
+            config,
+            usage_tracker=self.llm_usage,
+            call_type=LLMCallType.CORE_MEMORY,
         )
         _summary_llm: "LLMProvider" = _build_provider(
-            llm_settings.for_task("recursive_summary"), config
+            llm_settings.for_task("recursive_summary"),
+            config,
+            usage_tracker=self.llm_usage,
+            call_type=LLMCallType.SUMMARY,
         )
-
-        # ---- Transparency layer ----
-        self.event_bus: EventBus = EventBus()
-        self.operation_log: OperationLog = OperationLog()
-        self.retrieval_log: RetrievalLog = RetrievalLog()
-        self.processing_history: ProcessingHistory = ProcessingHistory()
 
         # ---- Shared services ----
         self._users: UserManager = UserManager(self.mongo)
@@ -264,6 +298,7 @@ class MemBlocksClient:
             event_bus=self.event_bus,
             processing_history=self.processing_history,
             retrieval_log=self.retrieval_log,
+            llm_usage_tracker=self.llm_usage,
         )
 
     # ------------------------------------------------------------------ #
@@ -454,6 +489,10 @@ class MemBlocksClient:
     def get_processing_history(self) -> "ProcessingHistory":
         """Return the ProcessingHistory for inspecting pipeline runs."""
         return self.processing_history
+
+    def get_llm_usage(self) -> "LLMUsageTracker":
+        """Return the LLMUsageTracker for inspecting token usage and latency."""
+        return self.llm_usage
 
     # ------------------------------------------------------------------ #
     # Lifecycle

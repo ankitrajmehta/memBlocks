@@ -97,7 +97,7 @@ class MemBlocksConfig(BaseSettings):
         ]
 
     llm_model: str = Field(
-        "meta-llama/llama-4-maverick-17b-128e-instruct",
+        "mmoonshotai/kimi-k2-instruct-0905",
         validation_alias="LLM_MODEL",
     )
     llm_convo_temperature: float = Field(0.7, validation_alias="LLM_CONVO_TEMPERATURE")
@@ -256,7 +256,7 @@ class MemBlocksConfig(BaseSettings):
         description="Enable query expansion with related terms.",
     )
     retrieval_enable_hypothetical_paragraphs: bool = Field(
-        True,
+        False,
         validation_alias="RETRIEVAL_ENABLE_HYPOTHETICAL_PARAGRAPHS",
         description="Enable hypothetical paragraph generation for retrieval.",
     )

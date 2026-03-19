@@ -1,5 +1,6 @@
 """OpenRouterLLMProvider — LLMProvider implementation using LangChain + OpenRouter."""
 
+import time
 from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
 
 from langchain_openai import ChatOpenAI
@@ -8,10 +9,12 @@ from pydantic import BaseModel
 
 from memblocks.llm.base import LLMProvider
 from memblocks.logger import get_logger
+from memblocks.models.transparency import LLMCallRecord, LLMCallType
 
 if TYPE_CHECKING:
     from memblocks.config import MemBlocksConfig
     from memblocks.llm.task_settings import LLMTaskSettings
+    from memblocks.services.transparency import LLMUsageTracker
 
 logger = get_logger(__name__)
 
@@ -31,6 +34,9 @@ class OpenRouterLLMProvider(LLMProvider):
 
     The ``models`` array is sent in the request body via ``model_kwargs``,
     as required by OpenRouter's API when using an OpenAI-compatible client.
+
+    Token usage and latency are recorded via an optional ``LLMUsageTracker``
+    supplied at construction time.
 
     Can be instantiated either from a full ``MemBlocksConfig`` (legacy path)
     or from a bare ``LLMTaskSettings`` + ``api_key`` (per-task path used by
@@ -66,6 +72,8 @@ class OpenRouterLLMProvider(LLMProvider):
         self._default_temperature: float = config.llm_convo_temperature
         self._fallback_models: List[str] = config.openrouter_fallback_models_list
         self._enable_thinking: bool = config.openrouter_enable_thinking
+        self._usage_tracker: Optional["LLMUsageTracker"] = None
+        self._call_type: LLMCallType = LLMCallType.CONVERSATION
 
         if self._fallback_models:
             logger.debug(
@@ -85,7 +93,7 @@ class OpenRouterLLMProvider(LLMProvider):
                 from opentelemetry import trace
 
                 existing = trace.get_tracer_provider()
-                if not hasattr(existing, '_initialized'):
+                if not hasattr(existing, "_initialized"):
                     tracer_provider = register(
                         space_id=config.arize_space_id,
                         api_key=config.arize_api_key,
@@ -110,6 +118,8 @@ class OpenRouterLLMProvider(LLMProvider):
         arize_space_id: Optional[str] = None,
         arize_api_key: Optional[str] = None,
         arize_project_name: str = "memBlocks",
+        usage_tracker: Optional["LLMUsageTracker"] = None,
+        call_type: LLMCallType = LLMCallType.CONVERSATION,
     ) -> "OpenRouterLLMProvider":
         """Construct a provider directly from ``LLMTaskSettings``.
 
@@ -123,6 +133,11 @@ class OpenRouterLLMProvider(LLMProvider):
             arize_space_id: Optional Arize monitoring space ID.
             arize_api_key: Optional Arize monitoring API key.
             arize_project_name: Arize project name.
+            usage_tracker: Optional tracker to record token usage and latency
+                after every LLM call made by this provider instance.
+            call_type: The ``LLMCallType`` label recorded with each call.
+                Set by ``MemBlocksClient._build_provider()`` based on which
+                pipeline task this provider serves.
 
         Returns:
             Configured ``OpenRouterLLMProvider`` instance.
@@ -133,6 +148,8 @@ class OpenRouterLLMProvider(LLMProvider):
         instance._default_temperature = task_settings.temperature
         instance._fallback_models = task_settings.fallback_models
         instance._enable_thinking = task_settings.enable_thinking
+        instance._usage_tracker = usage_tracker
+        instance._call_type = call_type
 
         if instance._fallback_models:
             logger.debug(
@@ -151,7 +168,7 @@ class OpenRouterLLMProvider(LLMProvider):
                 from opentelemetry import trace
 
                 existing = trace.get_tracer_provider()
-                if not hasattr(existing, '_initialized'):
+                if not hasattr(existing, "_initialized"):
                     tracer_provider = register(
                         space_id=arize_space_id,
                         api_key=arize_api_key,
@@ -198,6 +215,38 @@ class OpenRouterLLMProvider(LLMProvider):
         )
 
     # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _record_usage(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        total_tokens: int,
+        latency_ms: float,
+        block_id: Optional[str],
+        success: bool,
+        error: Optional[str] = None,
+    ) -> None:
+        """Push a ``LLMCallRecord`` to the tracker (no-op if not configured)."""
+        if self._usage_tracker is None:
+            return
+        self._usage_tracker.record(
+            LLMCallRecord(
+                call_type=self._call_type,
+                block_id=block_id,
+                model=self._model,
+                provider="openrouter",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                latency_ms=latency_ms,
+                success=success,
+                error=error,
+            )
+        )
+
+    # ------------------------------------------------------------------
     # LLMProvider implementation
     # ------------------------------------------------------------------
 
@@ -210,6 +259,9 @@ class OpenRouterLLMProvider(LLMProvider):
         """
         Create a LangChain structured-output chain using OpenRouter.
 
+        Uses ``include_raw=True`` internally so that ``usage_metadata`` is
+        accessible; callers still receive the plain parsed Pydantic object.
+
         If ``openrouter_fallback_models`` is set, the ``models`` fallback array
         is included in every request so OpenRouter can automatically failover.
 
@@ -219,15 +271,16 @@ class OpenRouterLLMProvider(LLMProvider):
             temperature: Sampling temperature.
 
         Returns:
-            LangChain ``Runnable`` accepting ``{"input": str}`` and returning
-            a ``pydantic_model`` instance.
+            An async-callable wrapper that accepts ``{"input": str}`` and
+            returns a ``pydantic_model`` instance, recording usage on each call.
         """
         llm = self._build_llm(temperature)
 
+        # include_raw=True so we can read usage_metadata from the raw AIMessage.
         structured_llm = llm.with_structured_output(
             pydantic_model,
             method="json_mode",
-            include_raw=False,
+            include_raw=True,
         )
 
         prompt = ChatPromptTemplate.from_messages(
@@ -237,15 +290,65 @@ class OpenRouterLLMProvider(LLMProvider):
             ]
         )
 
-        return prompt | structured_llm
+        raw_chain = prompt | structured_llm
+        tracker = self._usage_tracker
+        call_type = self._call_type
+        model = self._model
+
+        class _TrackedChain:
+            """Thin async wrapper that times the call and records token usage."""
+
+            async def ainvoke(
+                self_inner, inputs: Dict[str, Any], block_id: Optional[str] = None
+            ) -> Any:
+                t0 = time.monotonic()
+                error_msg: Optional[str] = None
+                raw_result: Any = None
+                try:
+                    raw_result = await raw_chain.ainvoke(inputs)
+                    return raw_result["parsed"]
+                except Exception as exc:
+                    error_msg = str(exc)
+                    raise
+                finally:
+                    latency_ms = (time.monotonic() - t0) * 1000
+                    in_tok = out_tok = tot_tok = 0
+                    if raw_result is not None:
+                        raw_msg = raw_result.get("raw")
+                        if raw_msg is not None and hasattr(raw_msg, "usage_metadata"):
+                            meta = raw_msg.usage_metadata or {}
+                            in_tok = meta.get("input_tokens", 0)
+                            out_tok = meta.get("output_tokens", 0)
+                            tot_tok = meta.get("total_tokens", in_tok + out_tok)
+                    if tracker is not None:
+                        tracker.record(
+                            LLMCallRecord(
+                                call_type=call_type,
+                                block_id=block_id,
+                                model=model,
+                                provider="openrouter",
+                                input_tokens=in_tok,
+                                output_tokens=out_tok,
+                                total_tokens=tot_tok,
+                                latency_ms=latency_ms,
+                                success=error_msg is None,
+                                error=error_msg,
+                            )
+                        )
+
+        return _TrackedChain()
 
     async def chat(
         self,
         messages: List[Dict[str, str]],
         temperature: Optional[float] = None,
+        block_id: Optional[str] = None,
     ) -> str:
         """
         Send a conversation and return the assistant's response text.
+
+        Token usage and latency are captured via the ``LLMUsageTracker``
+        supplied at construction time.
 
         If ``openrouter_fallback_models`` is set, OpenRouter will try each
         fallback model in order if the primary model is unavailable.
@@ -254,6 +357,8 @@ class OpenRouterLLMProvider(LLMProvider):
             messages: Conversation history as ``[{"role": ..., "content": ...}, ...]``.
             temperature: Override temperature. Defaults to
                          ``config.llm_convo_temperature`` set in ``__init__``.
+            block_id: Optional block ID to associate this call with in the
+                      usage tracker.
 
         Returns:
             Assistant response text.
@@ -262,5 +367,29 @@ class OpenRouterLLMProvider(LLMProvider):
             temperature if temperature is not None else self._default_temperature
         )
         llm = self._build_llm(effective_temp)
-        response = await llm.ainvoke(messages)
-        return response.content
+        t0 = time.monotonic()
+        error_msg: Optional[str] = None
+        response: Any = None
+        try:
+            response = await llm.ainvoke(messages)
+            return response.content
+        except Exception as exc:
+            error_msg = str(exc)
+            raise
+        finally:
+            latency_ms = (time.monotonic() - t0) * 1000
+            in_tok = out_tok = tot_tok = 0
+            if response is not None and hasattr(response, "usage_metadata"):
+                meta = response.usage_metadata or {}
+                in_tok = meta.get("input_tokens", 0)
+                out_tok = meta.get("output_tokens", 0)
+                tot_tok = meta.get("total_tokens", in_tok + out_tok)
+            self._record_usage(
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                total_tokens=tot_tok,
+                latency_ms=latency_ms,
+                block_id=block_id,
+                success=error_msg is None,
+                error=error_msg,
+            )
