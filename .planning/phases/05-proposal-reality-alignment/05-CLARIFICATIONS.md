@@ -16,18 +16,6 @@
 
 ## Open Items
 
-### [CLARIFY-REQ:001]
-
-**Segment:** Abstract (para 2) — "recursive memory evolution mechanism"
-**Matrix Row:** #5
-**Current Wording:** "A recursive memory evolution mechanism updates and refines stored knowledge while maintaining coherence and avoiding redundancy."
-**Issue:** The exact scope of "evolution" needs verification against shipped implementation.
-**Requested Clarification:**
-- Does the shipped system implement recursive memory evolution across all memory types, or only within specific sections (Core/Episodic)?
-- Is "evolution" triggered automatically, or is it capacity-threshold based?
-
----
-
 ### [CLARIFY-REQ:002]
 
 **Segment:** Abstract (para 2) — "privacy-preserving multi-user collaboration"
@@ -95,10 +83,10 @@
 
 | Field | Value |
 |-------|-------|
-| **Resolved** | TBD |
-| **Resolution** | — |
-| **Outcome** | Applied / Fallback Applied |
-| **Notes** | — |
+| **Resolved** | 2026-03-20 |
+| **Resolution** | Recursive Summary is implemented and used for conversation compression/continuity. Episodic is not implemented as a separate memory section. |
+| **Outcome** | Applied |
+| **Notes** | Updated report wording and matrix rationale to use Core + Semantic + Recursive Summary terminology. |
 
 ### [CLARIFY-REQ:002]
 
@@ -151,22 +139,22 @@ This ensures no assumption-based wording is introduced without explicit confirma
 | Category | Count |
 |----------|-------|
 | Total Clarifications | 5 |
-| Open | 5 |
+| Open | 4 |
 | Asked In-Session | 0 |
-| Resolved (Applied) | 0 |
+| Resolved (Applied) | 1 |
 | Resolved (Fallback Applied) | 0 |
 
 ---
 
 ## Carry-Forward Notes (Plan 05-02)
 
-- **[CLARIFY-REQ:001]** kept unchanged in `main.tex` (Abstract, para 2). Carry forward to Plan 05-03 for explicit scope wording on recursive memory evolution.
+- **[CLARIFY-REQ:001]** resolved and applied on 2026-03-20: Recursive Summary is implemented; episodic is not a separate implemented memory section.
 - **[CLARIFY-REQ:002]** kept unchanged in `main.tex` (Abstract, para 2). Carry forward to Plan 05-03 to resolve multi-user collaboration wording against single-user MCP deployment boundary.
 - **[CLARIFY-REQ:003]** kept unchanged in `main.tex` (Section 1.2). Carry forward to Phase 6 drafting pass if no in-session clarification is provided in Phase 5.
 - **[CLARIFY-REQ:004]** kept unchanged in `main.tex` (Section 1.3 Objective 6). Carry forward to Plan 05-03 for objective-status wording (fulfilled/partial/future work).
 - **[CLARIFY-REQ:005]** kept unchanged in `main.tex` (Section 3.3). Carry forward to Plan 05-03 to scope sliding-window wording to session-based CLI behavior.
 
-All unresolved clarification-tagged segments remain unchanged per fallback rule; no assumption-based rewrites were applied.
+All unresolved clarification-tagged segments remain unchanged per fallback rule; only CLARIFY-REQ:001 was resolved and applied.
 
 ---
 

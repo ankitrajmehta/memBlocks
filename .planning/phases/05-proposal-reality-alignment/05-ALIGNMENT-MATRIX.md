@@ -20,9 +20,9 @@
 |---|-----------------|----------------------|----------|-----------|-----------------|------------|--------|
 | 1 | Abstract (para 1) | "MemBlocks is a modular memory architecture for LLMs that addresses fixed context windows and limitations of monolithic RAG systems" | **KEEP** | Core concept still accurate—modular memory blocks vs monolithic RAG remains valid differentiator | shipped README.md | — | Complete |
 | 2 | Abstract (para 1) | "organizes memory into independent, attachable blocks representing distinct domains such as personal, academic, project, or collaborative contexts" | **KEEP** | Block creation with name/description still supported; domains are user-defined tags | shipped LIBRARY.md (create_block API) | — | Complete |
-| 3 | Abstract (para 1) | "Each block contains structured components including core attributes, event and factual memory, immutable resources, and recursive summaries for compressed conversational state" | **PATCH** | Shipped memory types: Core, Semantic, Episodic, Resources. "Event and factual memory" → "Semantic memory" (merged concept). "Recursive summaries" exists but terminology differs. | shipped LIBRARY.md memory types | — | Applied |
+| 3 | Abstract (para 1) | "Each block contains structured components including core attributes, event and factual memory, immutable resources, and recursive summaries for compressed conversational state" | **PATCH** | Implemented memory sections are Core, Semantic, and Recursive Summary. Resource memory is deferred for future implementation, and Episodic is not a separate implemented section. | UAT clarification (2026-03-20) | — | Applied |
 | 4 | Abstract (para 2) | "hybrid semantic and metadata-based retrieval to selectively assemble relevant context" | **KEEP** | Hybrid retrieval (dense + BM25) still implemented | shipped LIBRARY.md (hybrid search) | — | Complete |
-| 5 | Abstract (para 2) | "A recursive memory evolution mechanism updates and refines stored knowledge while maintaining coherence and avoiding redundancy" | **CLARIFY** | Core memory has capacity-based rewrite; episodic memory has summaries. Exact "evolution mechanism" behavior needs clarification on scope. | shipped LIBRARY.md, shipped MCP_SERVER.md | [CLARIFY-REQ:001] | Open |
+| 5 | Abstract (para 2) | "A recursive memory evolution mechanism updates and refines stored knowledge while maintaining coherence and avoiding redundancy" | **CLARIFY** | Core memory has capacity-based rewrite and recursive summary handles compressed continuity. No separately implemented episodic section; wording scope depends on clarified boundary. | UAT clarification (2026-03-20), shipped MCP_SERVER.md | [CLARIFY-REQ:001] | Resolved |
 | 6 | Abstract (para 2) | "MemBlocks supports dynamic context switching, user-controlled memory exposure, and privacy-preserving multi-user collaboration" | **CLARIFY** | Dynamic context switching (block attachment): YES. User-controlled exposure: YES. Multi-user collaboration: MCP server is single-user per instance. Unclear if collaborative blocks were implemented. | shipped MCP_SERVER.md (single user env var) | [CLARIFY-REQ:002] | Open |
 | 7 | Abstract (para 2) | "Implemented using Groq LLM APIs, Qdrant, Ollama embeddings, and LangChain" | **PATCH** | Groq, Qdrant, Ollama: accurate. LangChain: NOT used in shipped system. Should be "Python client library" or removed. | shipped LIBRARY.md (no LangChain dependency) | — | Applied |
 | 8 | Section 1.1 Background | "LLMs do not possess persistent memory by default and operate within fixed context window limits" | **KEEP** | Fundamental technical reality unchanged | — | — | Complete |
@@ -33,7 +33,7 @@
 | 13 | Section 1.2 Problem Statement | "weak support for collaborative memory, where some information must be shared among users while other data remains private" | **CLARIFY** | MCP server is single-user. Library supports block creation but multi-user sharing unclear. | shipped MCP_SERVER.md | [CLARIFY-REQ:003] | Open |
 | 14 | Section 1.3 Objectives | "design and implement a Modular Memory Management System for LLM agents, named MemBlocks" | **KEEP** | Project implemented as named | — | — | Complete |
 | 15 | Section 1.3 Objectives | Objective 1: "modular memory block architecture where each block represents a separate context" | **KEEP** | Implemented in shipped library | shipped LIBRARY.md | — | Complete |
-| 16 | Section 1.3 Objectives | Objective 2: "organize each memory block into structured sections, including core memory (essential facts), semantic memory (knowledge and events), recursive summary, and resources (documents)" | **PATCH** | Shipped sections: Core, Semantic, Episodic, Resources. Episodic ≈ conversation summaries. Semantic ≈ knowledge/events merged. | shipped LIBRARY.md | — | Applied |
+| 16 | Section 1.3 Objectives | Objective 2: "organize each memory block into structured sections, including core memory (essential facts), semantic memory (knowledge and events), recursive summary, and resources (documents)" | **PATCH** | Implemented sections are Core, Semantic, and Recursive Summary. Resource memory is explicitly future/deferred, and episodic is not a separate implemented section. | UAT clarification (2026-03-20) | — | Applied |
 | 17 | Section 1.3 Objectives | Objective 3: "enable dynamic attachment and detachment of memory blocks at runtime" | **KEEP** | Block attachment/detachment via CLI and MCP | shipped MCP_SERVER.md (set-block) | — | Complete |
 | 18 | Section 1.3 Objectives | Objective 4: "provide user-level control over context exposure" | **KEEP** | Active block control implemented | shipped CLI/MCP commands | — | Complete |
 | 19 | Section 1.3 Objectives | Objective 5: "implement intelligent retrieval mechanisms that understand query intent" | **KEEP** | Hybrid retrieval with query expansion/HyDE implemented | shipped LIBRARY.md | — | Complete |
@@ -46,16 +46,16 @@
 | 26 | Section 2.3 Requirements | Functional requirements table | **PATCH** | Table has proposal-era specific language. Keep requirements that map to shipped functionality. Some may need updating. | shipped LIBRARY.md, shipped MCP_SERVER.md | — | Applied |
 | 27 | Section 3 Methodology/System Architecture | "three primary layers: Memory Space Layer, Processing Layer, and User Interaction Layer" | **PATCH** | Shipped architecture is library-centric (MemBlocksClient), MCP server, and CLI. Not layered as proposed. Core concepts remain valid. | shipped LIBRARY.md, shipped MCP_SERVER.md | — | Applied |
 | 28 | Section 3.3 System Architecture | "Memory Block Repositories serve as independent storage units" | **KEEP** | Blocks are independent storage units—still accurate | shipped LIBRARY.md | — | Complete |
-| 29 | Section 3.3 System Architecture | "Each container encapsulates multiple sections: Resources, Core Memory, Event and Factual Memory, and Recursive Summary" | **PATCH** | Shipped sections: Core, Semantic, Episodic, Resources. Episodic ≈ conversation summaries, not Event/Factual. | shipped LIBRARY.md | — | Applied |
+| 29 | Section 3.3 System Architecture | "Each container encapsulates multiple sections: Resources, Core Memory, Event and Factual Memory, and Recursive Summary" | **PATCH** | Current implementation should be described as Core, Semantic, and Recursive Summary only. Resource memory is not implemented yet and should be framed as future scope. | UAT clarification (2026-03-20) | — | Applied |
 | 30 | Section 3.3 System Architecture | "The Sliding Window Manager maintains immediate conversational context" | **CLARIFY** | Session-based chat has sliding window. MCP context: no session pipeline. Clarify scope. | shipped LIBRARY.md | [CLARIFY-REQ:005] | Open |
 | 31 | Section 3.3 System Architecture | "The Agent (async) operates as an asynchronous orchestrator" | **PATCH** | Library uses async MemBlocksClient. MCP server is synchronous per-request. Reframe as "MemBlocksClient coordinates memory operations asynchronously." | shipped LIBRARY.md | — | Applied |
-| 32 | Section 3.4 Resources Section | "Resources section maintains immutable, agent-unmodified content" | **KEEP** | Resources are append-only document store—still accurate | shipped LIBRARY.md (upload_resource) | — | Complete |
-| 33 | Section 3.4 Resources Section | "hybrid (semantic + BM25) search over document embeddings generated by the Nomic Embed Text model via Ollama" | **KEEP** | Ollama + Nomic + hybrid search still implemented | shipped LIBRARY.md | — | Complete |
+| 32 | Section 3.4 Resources Section | "Resources section maintains immutable, agent-unmodified content" | **PATCH** | Resource memory is not implemented in current project scope; wording must explicitly mark this as future implementation instead of shipped behavior. | UAT clarification (2026-03-20) | — | Applied |
+| 33 | Section 3.4 Resources Section | "hybrid (semantic + BM25) search over document embeddings generated by the Nomic Embed Text model via Ollama" | **PATCH** | Resource retrieval details are not part of current implemented memory pipeline and should be framed as deferred/improvement scope. | UAT clarification (2026-03-20) | — | Applied |
 | 34 | Section 3.5 Core Memory Section | Core Memory with persona and human blocks | **KEEP** | Core memory with persona/human structure still exists | shipped LIBRARY.md (update_core_memory) | — | Complete |
 | 35 | Section 3.5 Core Memory Section | "Core Memory implements a capacity management mechanism" | **KEEP** | Capacity-based rewrite mechanism exists | shipped LIBRARY.md | — | Complete |
 | 36 | Section 3.6 Event and Factual Memory | Event and factual memory with metadata (type, timestamp, confidence, entities) | **PATCH** | Shipped: Semantic memory with metadata. Type classifications differ. Events merged into Semantic. | shipped LIBRARY.md (add_semantic_memory) | — | Applied |
 | 37 | Section 3.6 Event and Factual Memory | "Memory Addition Workflow For Event and Factual Memory" (5-step pipeline) | **PATCH** | Shipped extraction pipeline exists but exact steps may differ. Minimal-change: keep workflow description, update specifics only if contradicted. | shipped LIBRARY.md | — | Applied |
-| 38 | Section 3.7 Recursive Summary Section | Recursive Summary for conversation compression | **KEEP** | Episodic memory with summaries exists | shipped LIBRARY.md (add_episodic_memory) | — | Complete |
+| 38 | Section 3.7 Recursive Summary Section | Recursive Summary for conversation compression | **KEEP** | Recursive Summary is implemented and serves conversation compression/continuity in current system | UAT clarification (2026-03-20) | — | Complete |
 | 39 | Section 3.8 Prompt Engineering | Detailed prompts P_s1, P_s2, P_s3 described | **KEEP** | Internal prompt implementation details not published; keep general description | — | — | Complete |
 | 40 | Section 3.9 Retrieval Strategy | "Core Memory is always included in full" | **KEEP** | Core memory always injected—still accurate | shipped LIBRARY.md | — | Complete |
 | 41 | Section 3.9 Retrieval Strategy | "hybrid search with BM25 and approximate nearest neighbor search" | **KEEP** | Hybrid retrieval still implemented | shipped LIBRARY.md | — | Complete |
@@ -69,8 +69,8 @@
 
 | Decision | Count |
 |----------|-------|
-| KEEP | 29 |
-| PATCH | 12 |
+| KEEP | 27 |
+| PATCH | 14 |
 | REPLACE | 0 |
 | CLARIFY | 5 |
 | **Total** | **46 segments** |
@@ -79,11 +79,14 @@
 
 All clarification requests tagged with `[CLARIFY-REQ:XXX]` must be resolved before wording is finalized:
 
-- **[CLARIFY-REQ:001]** - Scope of "recursive memory evolution mechanism"
 - **[CLARIFY-REQ:002]** - Multi-user collaboration implementation status
 - **[CLARIFY-REQ:003]** - Collaborative memory sharing implementation
 - **[CLARIFY-REQ:004]** - Multi-user block sharing extent
 - **[CLARIFY-REQ:005]** - Sliding window / session pipeline in MCP context
+
+Resolved in UAT clarification:
+
+- **[CLARIFY-REQ:001]** - Scope of "recursive memory evolution mechanism" (resolved: Recursive Summary is implemented; no separate Episodic section)
 
 ---
 
