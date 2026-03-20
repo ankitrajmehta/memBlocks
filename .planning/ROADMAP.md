@@ -46,7 +46,12 @@ Plans:
   1. Report author can present methodology as executed implementation work rather than proposal-only intent.
   2. Report reader can find a dedicated Results and Discussion section that summarizes delivered outcomes and their significance.
   3. Report reader can find a dedicated Testing/Evaluation/Validation subsection that maps validation evidence to implemented components.
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Patch Methodology into executed-implementation framing with component evidence matrix
+- [ ] 06-02-PLAN.md — Add dedicated Results and Discussion sections with outcome-significance traceability
+- [ ] 06-03-PLAN.md — Add dedicated Testing/Evaluation/Validation subsection with component-level validation mapping
 
 ### Phase 7: Conclusions, Forward Path, and Editorial Finalization
 **Goal**: Final report has complete closeout sections and a coherent, consistent narrative from updated chapters through appendices.
