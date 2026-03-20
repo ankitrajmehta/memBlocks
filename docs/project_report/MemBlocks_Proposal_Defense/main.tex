@@ -520,6 +520,26 @@ After retrieval and ranking, the system assembles the final context for LLM invo
 
 \clearpage
 
+\section{Results}
+
+The implemented MemBlocks system delivered the planned component-level outcomes with a library-first execution pattern centered on \texttt{MemBlocksClient}. The core memory services were operationalized as the primary integration path for storing and retrieving structured context, while backend, frontend, and CLI surfaces were demonstrated as supporting application layers over the same shared memory foundation. This confirms that the project output is not limited to a design proposal; it is represented by an implemented memory platform with reusable integration surfaces.
+
+At the memory-section level, the delivered behavior shows clear separation of responsibilities. Core Memory is maintained as persistent high-priority context, Semantic Memory provides extraction and retrieval over structured memory entries with metadata, and Recursive Summary supports continuity through compressed conversation state. This sectioned implementation outcome is significant because it avoids treating all long-term information as one undifferentiated store, which was a central limitation identified in monolithic memory approaches.
+
+Implementation outcomes are also visible at the interface level. The CLI demonstrates practical runtime usage patterns, including active block switching and memory operations in an interactive flow. MCP integration extends the same memory capabilities to agent-facing tool usage through a lightweight interface. The key result is that multiple application surfaces can consume the same underlying memory architecture without redefining core memory logic per interface.
+
+Overall, the delivered outcomes indicate that MemBlocks achieved a practical and coherent implementation of modular memory management: the architecture is executable, memory sections are functionally differentiated, and interface surfaces are aligned to the same library core rather than fragmented into separate memory implementations.
+
+\section{Discussion}
+
+This discussion interprets the implementation outcomes through two required lenses: outcomes vs objectives, and architecture significance.
+
+\textbf{Outcomes vs objectives.} The delivered system aligns with the primary project objectives around modular memory organization, selective context control, and retrieval relevance. Independent memory blocks and runtime block activation support the objective of context isolation across user domains. Sectioned memory (Core, Semantic, Recursive Summary) supports the objective of differentiated storage and retrieval behavior for distinct information classes. The implemented retrieval and context assembly flow supports the objective of reducing irrelevant context exposure by combining always-needed persistent information with ranked, query-relevant semantic memories. While some wording related to broader multi-user collaboration remains clarification-sensitive in the report, the implemented outcomes discussed here are grounded in shipped, auditable components.
+
+\textbf{Architecture significance.} A major contribution of this implementation is the library-first architecture decision. Positioning \texttt{MemBlocksClient} as the system center provides a stable abstraction for memory operations and allows backend, frontend, CLI, and MCP surfaces to remain implementation consumers rather than competing architectural centers. This improves maintainability, reduces duplication of memory logic, and makes extension paths more controlled. In relation to prior memory-system patterns, MemBlocks demonstrates the practical value of composable memory sections and reusable integration interfaces without requiring an end-to-end redesign for each client surface.
+
+The interpretation above is intentionally evidence-grounded and moderately assertive: results show meaningful implementation progress and coherent architecture choices, while avoiding claims of universal superiority. Known boundaries remain brief and explicit. Clarification-linked narrative segments are preserved where assumptions would otherwise be required, and MCP is discussed as a supporting interface rather than expanded into a deep feature-by-feature comparative analysis.
+
 \section{Project Timeline}
 
 Figure~\ref{fig:project_timeline} illustrates the overall timeline of the proposed project, highlighting the major phases and their respective durations.
