@@ -575,6 +575,112 @@ Figure~\ref{fig:project_timeline} illustrates the overall timeline of the propos
     \label{fig:project_timeline}
 \end{figure}
 
+\section{Appendix}
+
+\subsection{Prompt Artifacts}
+
+\textbf{PS1\_SEMANTIC\_PROMPT (extract).}
+
+\begin{verbatim}
+You are a memory extraction specialist. Your task is to analyze a batch of
+user messages and extract structured semantic information for long-term memory
+storage and retrieval.
+
+Each memory block must be atomic (single fact/event/opinion), unique within the
+batch, and self-contained. Output must be JSON with root key "memories" and
+fields: keywords, content, type, entities, confidence, memory_time.
+\end{verbatim}
+
+\textbf{PS2\_MEMORY\_UPDATE\_PROMPT (extract).}
+
+\begin{verbatim}
+You are an AI Memory Conflict Resolution Agent. Integrate newly extracted
+memory with semantically similar existing memories.
+
+Allowed operations:
+- New memory: ADD or NONE
+- Existing memory: UPDATE, DELETE, or NONE
+
+Output JSON includes new_memory_operation and existing_memory_operations.
+\end{verbatim}
+
+\subsection{Core Data Models}
+
+\textbf{Memory block metadata and block structure (extract).}
+
+\begin{verbatim}
+class MemoryBlockMetaData(BaseModel):
+    id: str
+    created_at: str
+    updated_at: str
+    usage: Optional[List[str]]
+    user_id: Optional[str]
+    llm_usage: Dict[str, Any]
+
+class MemoryBlock(BaseModel):
+    meta_data: MemoryBlockMetaData
+    name: str
+    description: str
+    semantic_collection: Optional[str]
+    core_memory_block_id: Optional[str]
+    resource_collection: Optional[str]
+    is_active: bool
+\end{verbatim}
+
+\textbf{Section and LLM output models (extract).}
+
+\begin{verbatim}
+class SemanticMemoryData(BaseModel):
+    type: Literal["semantic"]
+    collection_name: str
+
+class CoreMemoryData(BaseModel):
+    type: Literal["core"]
+    block_id: str
+
+class ResourceMemoryData(BaseModel):
+    type: Literal["resource"]
+    collection_name: str
+
+class SemanticExtractionOutput(BaseModel):
+    keywords: List[str]
+    content: str
+    type: str
+    entities: List[str]
+    confidence: float
+    memory_time: Optional[str]
+\end{verbatim}
+
+\subsection{API Request Models}
+
+\textbf{Backend request contracts (extract).}
+
+\begin{verbatim}
+class CreateBlockRequest(BaseModel):
+    name: str
+    description: str
+    create_semantic: bool
+    create_core: bool
+    create_resource: bool
+
+class ChatRequest(BaseModel):
+    message: str
+
+class SearchMemoriesRequest(BaseModel):
+    query: str
+    top_k: int
+\end{verbatim}
+
+\subsection{Placeholders for Pending Packaging}
+
+\textbf{Placeholder: End-to-end MCP tool-call transcript package.} Representative,
+redacted MCP interaction logs are relevant to this report but are not yet
+consolidated into a stable appendix-ready artifact bundle.
+
+\textbf{Placeholder: Validation snapshot bundle (library/CLI/MCP cross-surface).}
+Repeatable multi-surface validation snapshot outputs are planned but are not yet
+packaged into a single reproducible appendix artifact.
+
 \clearpage
 
 \bibliographystyle{IEEEtran}
