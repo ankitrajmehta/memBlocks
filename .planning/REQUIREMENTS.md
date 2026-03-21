@@ -24,7 +24,7 @@ Requirements for milestone v1.2 (Final Project Report).
 ### Finalization Quality
 
 - [x] **QUAL-01**: Report reader can find an appendix section with clear placeholders or mapped artifacts relevant to the project.
-- [ ] **QUAL-02**: Report reader can read consistent terminology and narrative voice across updated chapters.
+- [x] **QUAL-02**: Report reader can read consistent terminology and narrative voice across updated chapters.
 
 ### Collaboration Guardrail
 
@@ -60,7 +60,7 @@ Deferred to future milestone(s).
 | CONT-04 | Phase 7 | Complete |
 | CONT-05 | Phase 7 | Complete |
 | QUAL-01 | Phase 7 | Complete |
-| QUAL-02 | Phase 7 | Pending |
+| QUAL-02 | Phase 7 | Complete |
 | COLL-01 | Phase 5 | Complete |
 
 **Coverage:**
