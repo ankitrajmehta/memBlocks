@@ -453,62 +453,6 @@ When using context:
 - Provide concise, informed responses based on available context"""
 
 
-QUERY_EXPANSION_PROMPT = """
-You are a query expansion specialist for semantic memory retrieval systems.
-
-Your task is to generate alternative query formulations that will improve retrieval coverage. Given a user's original query, you must generate {num_expansions} semantically related queries that:
-
-1. **Add related terms and concepts**: Include synonyms, hyponyms, hypernyms, and domain-specific terminology
-2. **Rephrase with different perspectives**: Reframe the question from different angles
-3. **Expand abbreviations and acronyms**: Make implicit terms explicit
-4. **Include contextual variations**: Consider different ways the information might be stored
-5. **Maintain semantic intent**: All expanded queries must preserve the core information need
-
-## Guidelines:
-
-- Each expanded query should be a complete, standalone query
-- Avoid trivial lexical variations (e.g., just changing word order)
-- Focus on semantic expansion that captures related concepts
-- Do NOT generate duplicate or near-duplicate queries
-- Keep queries concise and specific (1-2 sentences max)
-- Order by decreasing relevance to the original query
-
-## Output Format (JSON only):
-
-{{{{
-  "expanded_queries": [
-    "First expanded query with related terms",
-    "Second expanded query from different perspective",
-    "Third expanded query with domain-specific terminology"
-  ]
-}}}}
-
-## Examples:
-
-**Example 1:**
-Original Query: "Python machine learning projects"
-{{{{
-  "expanded_queries": [
-    "Python ML project implementations and examples",
-    "Machine learning applications developed using Python programming language",
-    "Python-based artificial intelligence and data science projects"
-  ]
-}}}}
-
-**Example 2:**
-Original Query: "database optimization techniques"
-{{{{
-  "expanded_queries": [
-    "SQL performance tuning and query optimization strategies",
-    "Database indexing, caching, and storage optimization methods",
-    "RDBMS and NoSQL database performance improvement approaches"
-  ]
-}}}}
-
-**Important**: Output ONLY valid JSON. No markdown, no extra text.
-"""
-
-
 QUERY_ENHANCEMENT_PROMPT = """
 You are a query enhancement specialist for semantic memory retrieval systems.
 
@@ -608,60 +552,6 @@ Original Query: "What are the benefits of using Docker?"
 }}}}
 """
 
-HYPOTHETICAL_PARAGRAPH_PROMPT = """
-You are a hypothetical answer generator for semantic memory retrieval systems.
-
-Your task is to generate {num_paragraphs} hypothetical answer paragraphs that could plausibly respond to the user's query. These paragraphs will be used to retrieve semantically similar memories from the knowledge base.
-
-## Purpose:
-
-Rather than searching with the question directly, we search with potential answers. This technique (called HyDE - Hypothetical Document Embeddings) improves retrieval by:
-- Bridging the embedding space gap between questions and answers
-- Capturing the semantic style and structure of actual stored memories
-- Including domain-specific terminology that appears in answers, not questions
-
-## Guidelines:
-
-1. **Write as if answering the query**: Generate realistic answer-style text, not questions
-2. **Be specific and detailed**: Include concrete facts, examples, and terminology
-3. **Vary the focus**: Each paragraph should emphasize different aspects of the query
-4. **Use natural language**: Write as a human would explain the topic
-5. **Include relevant entities**: Mention specific tools, technologies, people, or concepts
-6. **Keep it concise**: 2-4 sentences per paragraph
-7. **Be factually plausible**: Don't fabricate specific facts, but write in an answer style
-
-## Output Format (JSON only):
-
-{{{{
-  "paragraphs": [
-    "First hypothetical answer paragraph with specific details and terminology",
-    "Second hypothetical answer paragraph emphasizing different aspects"
-  ]
-}}}}
-
-## Examples:
-
-**Example 1:**
-Query: "How does user authentication work in FastAPI?"
-{{{{
-  "paragraphs": [
-    "FastAPI implements user authentication through OAuth2 with Password flow and JWT tokens. The security utilities in fastapi.security module provide dependencies like OAuth2PasswordBearer for token validation. Typically, you create a /token endpoint that returns a JWT token after verifying credentials, and then use the token in subsequent requests via the Authorization header.",
-    "User authentication in FastAPI can be implemented using the OAuth2PasswordRequestForm for login and HTTPBearer for token verification. The authentication flow involves hashing passwords with libraries like bcrypt or passlib, generating JWT tokens with python-jose, and protecting routes with dependency injection using Depends() to verify the current user from the token."
-  ]
-}}}}
-
-**Example 2:**
-Query: "What are the benefits of using Docker?"
-{{{{
-  "paragraphs": [
-    "Docker provides consistent development and production environments through containerization, eliminating the 'works on my machine' problem. Containers package applications with all their dependencies, making deployment faster and more reliable. Docker also enables efficient resource utilization since containers share the host OS kernel, using less memory than traditional virtual machines.",
-    "The main benefits of Docker include improved CI/CD workflows with faster build and deployment times, better scalability through orchestration tools like Kubernetes, and simplified dependency management. Docker Hub provides a vast ecosystem of pre-built images, and Docker Compose allows defining multi-container applications in a single YAML file, streamlining development and testing."
-  ]
-}}}}
-
-**Important**: Output ONLY valid JSON. No markdown, no extra text. Write as if you're providing answers, not asking questions.
-"""
-
 
 __all__ = [
     "PS1_SEMANTIC_PROMPT",
@@ -669,7 +559,5 @@ __all__ = [
     "SUMMARY_SYSTEM_PROMPT",
     "PS2_MEMORY_UPDATE_PROMPT",
     "ASSISTANT_BASE_PROMPT",
-    "QUERY_EXPANSION_PROMPT",
-    "HYPOTHETICAL_PARAGRAPH_PROMPT",
     "QUERY_ENHANCEMENT_PROMPT",
 ]

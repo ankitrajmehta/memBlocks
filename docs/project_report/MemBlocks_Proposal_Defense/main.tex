@@ -391,9 +391,9 @@ The Core Memory section stores high-priority, persistent information structured 
 
 \textbf{Reading Path.} On each interaction, the system constructs a prompt segment incorporating Core Memory.
 
-\textbf{Writing Path.} Updates to Core Memory follow a conservative protocol. After a set of conversation exchanges, a specialized LLM call evaluates whether the interaction contains Core-eligible information. The evaluation prompt explicitly constrains the agent to store only explicit, long-term, user information, preventing inference-based pollution of Core Memory. The prompt instructs the LLM to output a JSON structure indicating whether an update should occur and, if so, the revised persona and human blocks.
+\textbf{Writing Path.} Updates to Core Memory follow a conservative protocol. After a set of conversation exchanges, the Core Extraction Workflow evaluates whether the interaction contains Core-eligible information. The evaluation workflow explicitly constrains the agent to store only explicit, long-term, user information, preventing inference-based pollution of Core Memory. The workflow instructs the LLM to output a JSON structure indicating whether an update should occur and, if so, the revised persona and human blocks.
 
-Core Memory implements a capacity management mechanism: when content exceeds 90\% of the allocated token budget, the system triggers a controlled rewrite process. This process uses an LLM to compress and consolidate the memory while preserving all critical information.
+Core memory is manually defined to stay concise during each evaluation pass.
 
 \subsubsection{Semantic Memory Section}
 
@@ -424,15 +424,15 @@ Additionally, each memory maintains metadata including memory\_id, usage timesta
 \textbf{Memory Addition Workflow For Semantic Memory.} When a new interaction $I_i$ occurs at time $t_i$, the system executes a five-step storage pipeline:
 
 \begin{enumerate}
-    \item \textbf{Structured Note Construction.} An LLM processes the interaction using prompt $P_{s1}$ (detailed in Section 3.4) to generate keywords $K_i$, contextual description $c_i$, type classification, and entities. This structured extraction ensures consistent indexing across all memory entries.
+    \item \textbf{Structured Note Construction.} An LLM processes the interaction using the Semantic Extraction Workflow to generate keywords $K_i$, contextual description $c_i$, type classification, and entities. This structured extraction ensures consistent indexing across all memory entries.
     
-    \item \textbf{Vector Embedding Generation.} The system concatenates $c_i$, $K_i$, and $X_i$ into a single text representation and passes it through the Nomic Embed Text model running on Ollama. This lightweight embedding model generates a dense vector $e_i$ suitable for efficient similarity search in the Qdrant vector database.
+    \item \textbf{Vector Embedding Generation.} The system concatenates $c_i$, $K_i$, and $X_i$ into a single text representation and passes it through an embedding model. This embedding model generates a dense vector $e_i$ suitable for efficient similarity search in the Qdrant vector database.
     
     \item \textbf{Semantic Candidate Retrieval.} The system queries Qdrant to compute similarity between $e_i$ and existing semantic memory embeddings. The top-$k$ most similar memories (configured in the service layer; default small candidate set) are retrieved as conflict candidates.
     
-    \item \textbf{Conflict Resolution Decision (PS2).} The new memory proposal and candidate memories are passed to the LLM via prompt $P_{s2}$. The model decides operations for the new candidate (ADD or NONE) and for each existing candidate (UPDATE, DELETE, or NONE), based on semantic overlap, contradiction, and specificity.
+    \item \textbf{Conflict Resolution Decision.} The new memory proposal and candidate memories are passed to the LLM via the Memory Resolution Workflow. The model decides operations for the new candidate (ADD or NONE) and for each existing candidate (UPDATE, DELETE, or NONE), based on semantic overlap, contradiction, and specificity.
     
-    \item \textbf{Storage Execution.} The decided operations are executed on the vector store: ADD inserts a new point, UPDATE rewrites the existing point with refreshed payload and embeddings, DELETE removes contradicted/superseded entries, and NONE performs no write. If PS2 fails, the pipeline falls back to direct ADD so memory ingestion does not halt.
+    \item \textbf{Storage Execution.} The decided operations are executed on the vector store: ADD inserts a new point, UPDATE rewrites the existing point with refreshed payload and embeddings, DELETE removes contradicted/superseded entries, and NONE performs no write. If the memory resolution fails, the pipeline falls back to direct ADD so memory ingestion does not halt.
 \end{enumerate}
 
 This storage workflow combines structured extraction, candidate retrieval, conflict adjudication, and deterministic write execution in one pipeline. Compared with flat append-only memory strategies, it reduces duplicate entries and keeps memory state aligned with newer evidence.
@@ -453,23 +453,27 @@ The Recursive Summary section implements a progressive compression mechanism for
 
 This placement ensures the LLM has access to recent contextual continuity without requiring full message history.
 
-\textbf{Writing Path.} When the trigger condition activates, the system invokes an LLM with prompt $P_{s3}$, providing the existing summary $S_{old}$ and new messages since the last update $\Delta C$. The LLM produces an updated summary $S_{new}$ that compresses repetition, preserves high-level goals and unresolved questions, and removes resolved details.
+\textbf{Writing Path.} When the trigger condition activates, the system invokes an LLM with the Recursive Summary Workflow, providing the existing summary $S_{old}$ and new messages since the last update $\Delta C$. The LLM produces an updated summary $S_{new}$ that compresses repetition, preserves high-level goals and unresolved questions, and removes resolved details.
 
-\subsection{Prompt Engineering and Agentic Decision Logic}
+\subsection{Agentic Decision Logic Workflows}
 
-The MemBlocks system relies heavily on carefully engineered prompts to guide LLM behavior in memory operations. This section details the three primary prompts that drive structured note construction, memory resolution, and recursive summarization. Each prompt incorporates explicit constraints, output format specifications, and decision frameworks that ensure consistent, high-quality memory management.
+The MemBlocks system relies heavily on carefully engineered workflows to guide LLM behavior in memory operations. This section details the primary workflows that drive core updates, structured note construction, memory resolution, and recursive summarization. Each workflow incorporates explicit constraints, output format specifications, and decision frameworks that ensure consistent, high-quality memory management.
 
-\subsubsection{Prompt $P_{s1}$: Structured Note Construction}
+\subsubsection{Core Extraction Workflow}
 
-Prompt $P_{s1}$ converts raw user queries into structured memory entries for embedding and retrieval. It guides the LLM to extract information for three purposes: hybrid retrieval, memory linking, and future refinement. Keywords must be salient, domain-specific, non-redundant, and free of generic verbs or filler. Context is captured in a single sentence summarizing the topic, supporting recursive evolution. Tags indicate domain, function, and memory nature, avoiding redundancy or over-specificity. Output is strictly formatted in JSON to enable reliable downstream processing.
+The Core Extraction Workflow evaluates whether recent interactions contain new persistent, long-term facts about the user or the agent's persona. It ensures that only explicit constraints, preferences, or core identity traits are saved, preventing short-term inference from polluting the core memory.
 
-\subsubsection{Prompt $P_{s2}$: Memory Resolution and Update Agent}
+\subsubsection{Semantic Extraction Workflow}
 
-Prompt $P_{s2}$ manages integration of new information into existing memory by receiving a proposed memory from $P_{s1}$ and a candidate set of semantically similar stored memories. It outputs structured JSON decisions with operation-level control: new memory can be ADD or NONE, while existing candidates can be UPDATE, DELETE, or NONE. This keeps deduplication and contradiction handling explicit and executable by the storage layer.
+The Semantic Extraction Workflow converts raw user queries into structured memory entries for embedding and retrieval. It guides the LLM to extract information for three purposes: hybrid retrieval, memory linking, and future refinement. Keywords must be salient, domain-specific, non-redundant, and free of generic verbs or filler. Context is captured in a single sentence summarizing the topic, supporting recursive evolution. Tags indicate domain, function, and memory nature, avoiding redundancy or over-specificity. Output is strictly formatted in JSON to enable reliable downstream processing.
 
-\subsubsection{Prompt $P_{s3}$: Recursive Summarization}
+\subsubsection{Memory Resolution Workflow}
 
-Prompt $P_{s3}$ handles the recursive summarization of conversation by updating the previous summary with new messages while preserving essential context. It instructs the LLM to retain high-level goals, decisions, commitments, constraints, and unresolved actions, while removing resolved tasks, repetitive details, and obsolete context. Critical constraints prevent fabricating facts, storing personal or long-term user attributes, or duplicating content from Core or Semantic memory. The prompt produces a structured JSON output containing an updated\_summary field, ensuring deterministic integration of the compressed conversational context into the system.
+The Memory Resolution Workflow manages integration of new information into existing memory by receiving a proposed memory from earlier extraction and a candidate set of semantically similar stored memories. It outputs structured JSON decisions with operation-level control: new memory can be ADD or NONE, while existing candidates can be UPDATE, DELETE, or NONE. This keeps deduplication and contradiction handling explicit and executable by the storage layer.
+
+\subsubsection{Recursive Summary Workflow}
+
+The Recursive Summary Workflow handles the recursive summarization of conversation by updating the previous summary with new messages while preserving essential context. It instructs the LLM to retain high-level goals, decisions, commitments, constraints, and unresolved actions, while removing resolved tasks, repetitive details, and obsolete context. Critical constraints prevent fabricating facts, storing personal or long-term user attributes, or duplicating content from Core or Semantic memory. The workflow produces a structured JSON output containing an updated\_summary field, ensuring deterministic integration of the compressed conversational context into the system.
 
 \subsection{Retrieval Strategy and Context Assembly}
 
@@ -490,7 +494,10 @@ Within activated containers, retrieval proceeds section by section:
 
 After retrieval and ranking, the system assembles the final context for LLM invocation. The assembly follows a structured template that delineates memory sources: Core Memory first, Recursive Summary second, ranked semantic memories next, then recent sliding-window turns, followed by the current user input. This order preserves persistent identity/context priors while prioritizing query-relevant evidence for the current turn.
 \clearpage
-\section{Proposed System design}
+\section{Experimental Setup}
+
+\clearpage
+\section{System Design}
 
 \begin{figure}[htbp]
     \centering
