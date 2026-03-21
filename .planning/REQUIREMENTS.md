@@ -18,8 +18,8 @@ Requirements for milestone v1.2 (Final Project Report).
 - [x] **CONT-01**: Report author can describe methodology in terms of what was actually implemented and executed, not only planned design.
 - [x] **CONT-02**: Report reader can see a dedicated Results and Discussion section that summarizes implemented outcomes and their significance.
 - [x] **CONT-03**: Report reader can see a dedicated Testing/Evaluation/Validation subsection tied to implemented components.
-- [ ] **CONT-04**: Report reader can see a Conclusion section summarizing key achievements against project objectives.
-- [ ] **CONT-05**: Report reader can see a Limitations and Future Enhancement section grounded in real project constraints and next steps.
+- [x] **CONT-04**: Report reader can see a Conclusion section summarizing key achievements against project objectives.
+- [x] **CONT-05**: Report reader can see a Limitations and Future Enhancement section grounded in real project constraints and next steps.
 
 ### Finalization Quality
 
@@ -57,8 +57,8 @@ Deferred to future milestone(s).
 | CONT-01 | Phase 6 | Complete |
 | CONT-02 | Phase 6 | Complete |
 | CONT-03 | Phase 6 | Complete |
-| CONT-04 | Phase 7 | Pending |
-| CONT-05 | Phase 7 | Pending |
+| CONT-04 | Phase 7 | Complete |
+| CONT-05 | Phase 7 | Complete |
 | QUAL-01 | Phase 7 | Pending |
 | QUAL-02 | Phase 7 | Pending |
 | COLL-01 | Phase 5 | Complete |

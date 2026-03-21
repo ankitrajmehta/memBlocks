@@ -62,7 +62,12 @@ Plans:
   2. Report reader can find a Limitations and Future Enhancement section grounded in real constraints and credible next steps.
   3. Report reader can find an appendix section with clear placeholders or mapped artifacts relevant to MemBlocks.
   4. Report reader can read consistent terminology and narrative voice across all updated chapters.
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — Add objective-linked Conclusion and paired Limitations/Future closeout sections
+- [ ] 07-02-PLAN.md — Build appendix artifact extracts and integrate hybrid appendix section
+- [ ] 07-03-PLAN.md — Enforce report-wide voice and terminology consistency lock
 
 ## Requirement Coverage Map
 
