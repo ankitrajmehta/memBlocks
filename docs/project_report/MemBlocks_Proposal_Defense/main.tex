@@ -304,7 +304,7 @@ Sectioned Memory Structure & Each memory block must internally support structure
 \hline
 Core Memory Persistence & The system must maintain a compact core memory containing high-priority user and agent information that is always passed to the LLM. \\
 \hline
-Event \& Factual Memory Storage & The system must store extracted events, facts, and opinions as time-aware textual memory items with metadata such as type, timestamp, confidence, and entities. \\
+Semantic Memory Storage & The system must store extracted facts, events, and opinions as time-aware textual memory items with metadata such as type, timestamp, confidence, and entities. \\
 \hline
 Selective Retrieval & The retrieval layer must fetch relevant information only from active memory blocks to reduce noise and improve response quality. \\
 \hline
@@ -440,7 +440,7 @@ Additionally, each memory maintains metadata including memory\_id, message\_ids 
     \item \textbf{Recursive Memory Evolution.} For each candidate identified in Step 3, the LLM determines whether existing context or tags should be refined to reflect the new knowledge. This evolution process ensures that historical memories remain current and accurately reflect the accumulated knowledge state. The evolved versions replace originals in Qdrant, maintaining semantic consistency across the knowledge graph.
 \end{enumerate}
 
-This workflow represents a significant advancement over MemGPT and MemOS. While MemGPT provides persona and human memory blocks and MemOS offers session-based episodic tracking, neither implements recursive memory evolution with semantic linking. Standard RAG systems lack any notion of memory evolution entirely, treating all documents as static. Memory Blocks' integration of LLM-driven evolution with vector similarity enables the knowledge base to grow organically while maintaining coherence.
+This workflow represents a significant advancement over MemGPT and MemOS. While MemGPT provides persona and human memory blocks and MemOS offers session-based episodic tracking, neither implements recursive memory evolution with semantic linking. Standard RAG systems lack any notion of memory evolution entirely, treating all documents as static. MemBlocks' integration of LLM-driven evolution with vector similarity enables the knowledge base to grow organically while maintaining coherence.
 
 \subsubsection{Recursive Summary Section}
 
@@ -462,7 +462,7 @@ This placement ensures the LLM has access to recent contextual continuity withou
 
 \subsection{Prompt Engineering and Agentic Decision Logic}
 
-The Memory Blocks system relies heavily on carefully engineered prompts to guide LLM behavior in memory operations. This section details the three primary prompts that drive structured note construction, memory resolution, and recursive summarization. Each prompt incorporates explicit constraints, output format specifications, and decision frameworks that ensure consistent, high-quality memory management.
+The MemBlocks system relies heavily on carefully engineered prompts to guide LLM behavior in memory operations. This section details the three primary prompts that drive structured note construction, memory resolution, and recursive summarization. Each prompt incorporates explicit constraints, output format specifications, and decision frameworks that ensure consistent, high-quality memory management.
 
 \subsubsection{Prompt $P_{s1}$: Structured Note Construction}
 
@@ -478,7 +478,7 @@ Prompt $P_{s3}$ handles the recursive summarization of conversation by updating 
 
 \subsection{Retrieval Strategy and Context Assembly}
 
-The Memory Blocks retrieval strategy implements a multi-stage process that combines container selection, section-specific retrieval, and intelligent ranking to assemble relevant context for LLM invocation. This approach represents a significant departure from monolithic RAG systems that perform flat semantic search across all documents.
+The MemBlocks retrieval strategy implements a multi-stage process that combines container selection, section-specific retrieval, and intelligent ranking to assemble relevant context for LLM invocation. This approach represents a significant departure from monolithic RAG systems that perform flat semantic search across all documents.
 
 \subsubsection{Section-Specific Retrieval}
 
@@ -500,7 +500,7 @@ After retrieval and ranking, the system assembles the final context for LLM invo
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=1.1\textwidth]{memBlocks_diagram1.png}
-    \caption{Memory Blocks System Architecture Overview}
+    \caption{MemBlocks System Architecture Overview}
     \label{fig:memBlocks_diagram1}
 \end{figure}
 
@@ -542,7 +542,7 @@ The interpretation above is intentionally evidence-grounded and moderately asser
 
 \section{Testing/Evaluation/Validation}
 
-This subsection validates implemented MemBlocks components through direct evidence mapping rather than generic testing claims. The validation basis is the component-level matrix in \texttt{.planning/phases/06-implementation-outcomes-validation-sections/06-VALIDATION-EVIDENCE-MATRIX.md}, where each claim is tied to concrete artifacts and expressed with narrative confidence.
+This subsection validates implemented MemBlocks components through direct evidence mapping rather than non-traceable testing statements. The validation basis is the component-level matrix in \texttt{.planning/phases/06-implementation-outcomes-validation-sections/06-VALIDATION-EVIDENCE-MATRIX.md}, where each claim is tied to concrete artifacts and expressed with narrative confidence.
 
 \textbf{Library core and memory services.} Validation evidence indicates that \texttt{MemBlocksClient} functions as the central integration surface, with Core Memory, Semantic Memory, and Recursive Summary implemented as differentiated operational sections. This claim is supported by aligned methodology text and shipped documentation artifacts (\texttt{docs/LIBRARY.md}, \texttt{README.md}), giving high confidence that the implementation is component-structured rather than monolithic.
 
