@@ -100,7 +100,7 @@ LLM_PROVIDER_NAME=groq
 
 # === Groq API (Required if using Groq) ===
 GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxx
-LLM_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
+LLM_MODEL=mmoonshotai/kimi-k2-instruct-0905
 
 # === Google Gemini API (Required if using Gemini) ===
 # GEMINI_API_KEY=AIzaSy_xxxxxxxxxxxxxxxxxx
@@ -108,13 +108,13 @@ LLM_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
 
 # === OpenRouter API (Required if using OpenRouter) ===
 # OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxxxxxxx
-# LLM_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
+# LLM_MODEL=mmoonshotai/kimi-k2-instruct-0905
 # OPENROUTER_FALLBACK_MODELS=anthropic/claude-3-5-haiku,google/gemini-flash-1.5
 # OPENROUTER_ENABLE_THINKING=false
 
 # === MongoDB (Required) ===
 MONGODB_CONNECTION_STRING=mongodb://localhost:27017
-MONGODB_DATABASE_NAME=memblocks
+MONGODB_DATABASE_NAME=memblocks_v2
 MONGO_COLLECTION_USERS=users
 MONGO_COLLECTION_BLOCKS=memory_blocks
 MONGO_COLLECTION_CORE_MEMORIES=core_memories
@@ -130,7 +130,7 @@ EMBEDDINGS_MODEL=nomic-embed-text
 
 # === Memory Pipeline Behavior (Optional) ===
 MEMORY_WINDOW=10          # Messages before triggering pipeline
-KEEP_LAST_N=5             # Messages retained after flush
+KEEP_LAST_N=4             # Messages retained after flush
 
 # === LLM Temperatures (Optional) ===
 LLM_CONVO_TEMPERATURE=0.7
@@ -158,8 +158,8 @@ config = MemBlocksConfig(
     qdrant_host="localhost",
     qdrant_port=6333,
     ollama_base_url="http://localhost:11434",
-    memory_window=10,
-    keep_last_n=5,
+    memory_window_limit=10,
+    keep_last_n=4,
 )
 
 # Option 3: Gemini — explicit values
@@ -177,7 +177,7 @@ config = MemBlocksConfig(
 config = MemBlocksConfig(
     llm_provider_name="openrouter",
     openrouter_api_key="sk-or-xxxxxxxxx",
-    llm_model="meta-llama/llama-4-maverick-17b-128e-instruct",
+    llm_model="mmoonshotai/kimi-k2-instruct-0905",
     mongodb_connection_string="mongodb://localhost:27017",
     qdrant_host="localhost",
     qdrant_port=6333,
@@ -201,9 +201,9 @@ client = MemBlocksClient(config)
 | `gemini_api_key` | `GEMINI_API_KEY` | `None` | API key for Google Gemini (required when provider is `"gemini"`) |
 | `openrouter_api_key` | `OPENROUTER_API_KEY` | `None` | API key for OpenRouter (required when provider is `"openrouter"`) |
 | `cohere_api_key` | `COHERE_API_KEY` | `None` | API key for Cohere re-ranker (required when using Cohere-based reranking) |
-| `llm_model` | `LLM_MODEL` | `meta-llama/llama-4-maverick-17b-128e-instruct` | Model identifier (provider-specific) |
+| `llm_model` | `LLM_MODEL` | `mmoonshotai/kimi-k2-instruct-0905` | Model identifier (provider-specific) |
 | `mongodb_connection_string` | `MONGODB_CONNECTION_STRING` | *required* | MongoDB connection URI |
-| `mongodb_database_name` | `MONGODB_DATABASE_NAME` | `memblocks` | Database name |
+| `mongodb_database_name` | `MONGODB_DATABASE_NAME` | `memblocks_v2` | Database name |
 | `qdrant_host` | `QDRANT_HOST` | `localhost` | Qdrant server host |
 | `qdrant_port` | `QDRANT_PORT` | `6333` | Qdrant REST port |
 | `qdrant_prefer_grpc` | `QDRANT_PREFER_GRPC` | `true` | Use gRPC for Qdrant |
@@ -214,8 +214,8 @@ client = MemBlocksClient(config)
 
 | Setting | Environment Variable | Default | Description |
 |---------|---------------------|---------|-------------|
-| `memory_window` | `MEMORY_WINDOW` | `10` | Messages to accumulate before processing |
-| `keep_last_n` | `KEEP_LAST_N` | `5` | Messages kept after pipeline flush |
+| `memory_window_limit` | `MEMORY_WINDOW` | `10` | Messages to accumulate before processing |
+| `keep_last_n` | `KEEP_LAST_N` | `4` | Messages kept after pipeline flush |
 
 ### Temperature Settings
 
@@ -242,7 +242,7 @@ Uses [`langchain-groq`](https://pypi.org/project/langchain-groq/) to call Groq's
 ```env
 LLM_PROVIDER_NAME=groq
 GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxx
-LLM_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
+LLM_MODEL=mmoonshotai/kimi-k2-instruct-0905
 ```
 
 ```python
@@ -251,7 +251,7 @@ from memblocks import MemBlocksClient, MemBlocksConfig
 config = MemBlocksConfig(
     llm_provider_name="groq",
     groq_api_key="gsk_xxxxxxxxx",
-    llm_model="meta-llama/llama-4-maverick-17b-128e-instruct",
+    llm_model="mmoonshotai/kimi-k2-instruct-0905",
 )
 client = MemBlocksClient(config)
 ```
@@ -292,7 +292,7 @@ Get your key from [openrouter.ai/keys](https://openrouter.ai/keys).
 ```env
 LLM_PROVIDER_NAME=openrouter
 OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxxxxxxx
-LLM_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
+LLM_MODEL=mmoonshotai/kimi-k2-instruct-0905
 
 # Optional: comma-separated fallback models tried in order on failure
 OPENROUTER_FALLBACK_MODELS=anthropic/claude-3-5-haiku,google/gemini-flash-1.5
@@ -307,7 +307,7 @@ from memblocks import MemBlocksClient, MemBlocksConfig
 config = MemBlocksConfig(
     llm_provider_name="openrouter",
     openrouter_api_key="sk-or-xxxxxxxxx",
-    llm_model="meta-llama/llama-4-maverick-17b-128e-instruct",
+    llm_model="mmoonshotai/kimi-k2-instruct-0905",
 )
 client = MemBlocksClient(config)
 ```
@@ -344,7 +344,7 @@ client.conversation_llm = MyOpenAIProvider(...)   # override after construction
 
 ### Optional Arize Monitoring
 
-Both providers support [Arize Phoenix](https://arize.com/) tracing via `openinference`. Set the following env vars to enable it:
+All three providers support [Arize Phoenix](https://arize.com/) tracing via `openinference`. Set the following env vars to enable it:
 
 ```env
 ARIZE_SPACE_ID=your_space_id
@@ -394,7 +394,7 @@ config = MemBlocksConfig(
         # Default applies to every task that has no explicit override
         default=LLMTaskSettings(
             provider="groq",
-            model="meta-llama/llama-4-maverick-17b-128e-instruct",
+            model="mmoonshotai/kimi-k2-instruct-0905",
             temperature=0.0,
         ),
         # Override just the conversation task
