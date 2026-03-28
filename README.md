@@ -126,8 +126,7 @@ See [Library Documentation](docs/LIBRARY.md) for complete API reference.
 
 ```bash
 # Start backend
-cd backend
-uvicorn src.api.main:app --reload
+uv run python -m uvicorn backend.src.api.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 API documentation available at: `http://localhost:8000/docs`
