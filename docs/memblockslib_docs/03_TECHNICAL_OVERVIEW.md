@@ -215,7 +215,7 @@ from memblocks import (
     LLMProvider,
     GroqLLMProvider,
     GeminiLLMProvider,
-    OpenRouterLLMProvider,
+    # OpenRouterLLMProvider is exported from memblocks.llm
     LLMTaskSettings,
     LLMSettings,
 
@@ -286,7 +286,7 @@ class MemBlocksConfig(BaseSettings):
 | `groq_api_key` | `GROQ_API_KEY` | `None` | Groq API key |
 | `gemini_api_key` | `GEMINI_API_KEY` | `None` | Google Gemini API key |
 | `openrouter_api_key` | `OPENROUTER_API_KEY` | `None` | OpenRouter API key |
-| `llm_model` | `LLM_MODEL` | `meta-llama/llama-4-maverick-17b-128e-instruct` | Model identifier (used when `llm_settings` is not set) |
+| `llm_model` | `LLM_MODEL` | `mmoonshotai/kimi-k2-instruct-0905` | Model identifier (used when `llm_settings` is not set) |
 | `llm_settings` | *(code only)* | `None` | `LLMSettings` object for per-task provider routing; when set, takes precedence over flat fields |
 | `openrouter_fallback_models` | `OPENROUTER_FALLBACK_MODELS` | `""` | Comma-separated fallback model IDs for OpenRouter |
 | `openrouter_enable_thinking` | `OPENROUTER_ENABLE_THINKING` | `false` | Enable extended thinking for OpenRouter |
@@ -314,7 +314,7 @@ This means existing code that uses flat env vars continues to work without any c
 | Field | Env Var | Default | Description |
 |-------|---------|---------|-------------|
 | `mongodb_connection_string` | `MONGODB_CONNECTION_STRING` | *required* | Connection URI |
-| `mongodb_database_name` | `MONGODB_DATABASE_NAME` | `memblocks` | Database name |
+| `mongodb_database_name` | `MONGODB_DATABASE_NAME` | `memblocks_v2` | Database name |
 | `mongo_collection_users` | `MONGO_COLLECTION_USERS` | `users` | Users collection |
 | `mongo_collection_blocks` | `MONGO_COLLECTION_BLOCKS` | `memory_blocks` | Blocks collection |
 | `mongo_collection_core_memories` | `MONGO_COLLECTION_CORE_MEMORIES` | `core_memories` | Core memories collection |
@@ -340,8 +340,8 @@ This means existing code that uses flat env vars continues to work without any c
 
 | Field | Env Var | Default | Description |
 |-------|---------|---------|-------------|
-| `memory_window` | `MEMORY_WINDOW` | `10` | Messages before pipeline trigger |
-| `keep_last_n` | `KEEP_LAST_N` | `5` | Messages retained after flush |
+| `memory_window_limit` | `MEMORY_WINDOW` | `10` | Messages before pipeline trigger |
+| `keep_last_n` | `KEEP_LAST_N` | `4` | Messages retained after flush |
 
 ### Dynamic Collection Naming
 
@@ -389,7 +389,7 @@ config = MemBlocksConfig(
     groq_api_key="gsk_test_key",
     mongodb_connection_string="mongodb://localhost:27017",
     qdrant_host="localhost",
-    memory_window=5,
+    memory_window_limit=5,
 )
 ```
 
@@ -398,7 +398,7 @@ config = MemBlocksConfig(
 ```python
 # Load from .env, but override one value
 config = MemBlocksConfig(
-    memory_window=20,  # Larger window for this instance
+    memory_window_limit=20,  # Larger window for this instance
 )
 ```
 
@@ -411,7 +411,7 @@ Pydantic validates all fields at construction time:
 config = MemBlocksConfig()  # Error if GROQ_API_KEY not set
 
 # Invalid type raises ValidationError  
-config = MemBlocksConfig(memory_window="invalid")  # Error: must be int
+config = MemBlocksConfig(memory_window_limit="invalid")  # Error: must be int
 ```
 
 ---
@@ -1237,7 +1237,7 @@ The pipeline runs **asynchronously in the background** when the message window i
 
 ### Triggering the Pipeline
 
-The pipeline is triggered by `Session.add()` when message count reaches `memory_window`:
+The pipeline is triggered by `Session.add()` when message count reaches `memory_window_limit`:
 
 ```python
 # In Session.add()
@@ -1493,7 +1493,7 @@ User Message 11  ────────► Next turn begins (if user awaited)
 
 | Parameter | Config Field | Default | Description |
 |-----------|--------------|---------|-------------|
-| Window size | `memory_window` | 10 | Messages before trigger |
+| Window size | `memory_window_limit` | 10 | Messages before trigger |
 | Keep last N | `keep_last_n` | 5 | Messages retained after flush |
 
 

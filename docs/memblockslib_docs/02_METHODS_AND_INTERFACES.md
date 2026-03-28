@@ -514,7 +514,7 @@ from memblocks import MemBlocksConfig
 config = MemBlocksConfig(
     llm_provider_name="groq",
     groq_api_key="gsk_xxxxxxxxx",
-    llm_model="meta-llama/llama-4-maverick-17b-128e-instruct",
+    llm_model="mmoonshotai/kimi-k2-instruct-0905",
 )
 
 # Automatically instantiated by MemBlocksClient
@@ -532,7 +532,7 @@ response = await provider.chat([{"role": "user", "content": "Hello!"}])
 | Field | Description |
 |-------|-------------|
 | `groq_api_key` | Required. Groq API key. |
-| `llm_model` | Model identifier, e.g. `meta-llama/llama-4-maverick-17b-128e-instruct`. |
+| `llm_model` | Model identifier, e.g. `mmoonshotai/kimi-k2-instruct-0905`. |
 | `llm_convo_temperature` | Default temperature for `chat()` calls (default: `0.7`). |
 
 ### GeminiLLMProvider
@@ -589,7 +589,7 @@ from memblocks import MemBlocksClient, MemBlocksConfig
 config = MemBlocksConfig(
     llm_provider_name="openrouter",
     openrouter_api_key="sk-or-xxxxxxxxx",
-    llm_model="meta-llama/llama-4-maverick-17b-128e-instruct",
+    llm_model="mmoonshotai/kimi-k2-instruct-0905",
 )
 
 # Automatically instantiated by MemBlocksClient
@@ -602,7 +602,7 @@ response = await client.conversation_llm.chat([{"role": "user", "content": "Hell
 | Field | Description |
 |-------|-------------|
 | `openrouter_api_key` | Required. OpenRouter API key from [openrouter.ai/keys](https://openrouter.ai/keys). |
-| `llm_model` | Model identifier, e.g. `meta-llama/llama-4-maverick-17b-128e-instruct`. |
+| `llm_model` | Model identifier, e.g. `mmoonshotai/kimi-k2-instruct-0905`. |
 | `openrouter_fallback_models` | Comma-separated list of fallback model IDs tried in order on failure. |
 | `openrouter_enable_thinking` | `true`/`false` — enable extended thinking (reasoning models only). |
 
@@ -737,7 +737,7 @@ config = MemBlocksConfig(
     llm_settings=LLMSettings(
         default=LLMTaskSettings(
             provider="groq",
-            model="meta-llama/llama-4-maverick-17b-128e-instruct",
+            model="mmoonshotai/kimi-k2-instruct-0905",
             temperature=0.0,
         ),
         conversation=LLMTaskSettings(
@@ -752,7 +752,7 @@ config = MemBlocksConfig(
 
 client = MemBlocksClient(config)
 # client.conversation_llm → OpenRouterLLMProvider (claude-opus-4, temp=0.7)
-# Internal pipeline tasks → GroqLLMProvider (llama-4-maverick, temp=0.0)
+# Internal pipeline tasks → GroqLLMProvider (kimi-k2-instruct-0905, temp=0.0)
 ```
 
 When `llm_settings` is **not** set, the client auto-constructs equivalent settings from the flat legacy fields (`llm_provider_name`, `llm_model`, per-task temperature env vars). Existing code requires no changes.

@@ -658,6 +658,8 @@ async def memblocks_retrieve(params: RetrieveInput, ctx: Context) -> str:
     and semantic memory (vector search). Returns formatted context ready for
     LLM injection.
 
+    Always use this tool for retrieval unless you specifically need core-only or semantic-only results — it provides the most complete context in one call.
+
     Input:
       - query (str): Search query for semantic memory retrieval
 
