@@ -539,10 +539,11 @@ Edit `mcp_server/server.py` to change the default port (if needed for your MCP c
 
 ## Additional Resources
 
-- [Architecture Overview](./ARCHITECTURE.md)
-- [Library API Documentation](./LIBRARY.md)
-- [REST API Documentation](./API.md)
-- [Deployment Guide](./DEPLOYMENT.md)
+- [Architecture Overview](../ARCHITECTURE.md)
+- [Library Setup Guide](../memblockslib_docs/01_SETUP_GUIDE.md)
+- [Library Methods and Interfaces](../memblockslib_docs/02_METHODS_AND_INTERFACES.md)
+- [Backend REST API](../backend/API.md)
+- [Deployment Guide](../backend/DEPLOYMENT.md)
 - [MCP Protocol Specification](https://spec.modelcontextprotocol.io/)
 
 ---

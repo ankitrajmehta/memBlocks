@@ -1,0 +1,543 @@
+﻿\documentclass[12pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage{cite}
+\usepackage{natbib}
+\usepackage{float}
+
+% Document settings
+\onehalfspacing
+\setlength{\parindent}{0.5in}
+\setlength{\parskip}{0pt}
+
+
+\title{
+    \includegraphics[width=1.5in]{logo.png}\\[2.5mm]
+    \textbf{TRIBHUVAN UNIVERSITY} \\
+    \large \textbf{INSTITUTE OF ENGINEERING} \\
+    \large \textbf{PULCHOWK CAMPUS} \\
+    \vspace{1cm}
+    \large \textbf{A \\Project Proposal\\ On} \\
+    \vspace{1cm}
+    \large\textbf{A Modular Memory Management Architecture for Context-Aware Large Language Models}
+    \vspace{.5cm}
+}
+
+\author{
+    \textbf{SUBMITTED BY:} \\
+    Aayush Ojha (079BCT005) \\
+    Ankit Raj Mehta (079BCT018) \\
+    Ashish Pandey (079BCT023)
+}
+
+\date{
+    \vspace{1cm}
+    \textbf{SUBMITTED TO:} \\
+    {DEPARTMENT OF ELECTRONICS AND COMPUTER ENGINEERING} \\
+    \vspace{2cm}
+    February, 2026
+}
+
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+\newpage
+
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+
+\newpage
+\section*{Acknowledgement}
+\addcontentsline{toc}{section}{Acknowledgement}
+
+We would like to express their sincere gratitude to the \textbf{Department of Electronics and Computer Engineering} for providing the academic environment, resources, and guidance necessary for the successful completion of this project. We are thankful to the faculty members for their continuous support, constructive feedback, and encouragement throughout the course of this work. Their guidance and expertise have played a crucial role in shaping this project and enhancing our learning experience.
+\clearpage
+
+
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+MemBlocks is a modular memory architecture for Large Language Models (LLMs) that addresses fixed context windows and limitations of monolithic Retrieval-Augmented Generation systems. It organizes memory into independent, attachable blocks representing distinct domains such as personal, academic, project, or collaborative contexts. Each block contains structured components including core attributes, event and factual memory, immutable resources, and recursive summaries for compressed conversational state.
+
+The system employs hybrid semantic and metadata-based retrieval to selectively assemble relevant context, reducing retrieval noise and improving scalability. A recursive memory evolution mechanism updates and refines stored knowledge while maintaining coherence and avoiding redundancy. MemBlocks supports dynamic context switching, user-controlled memory exposure, and privacy-preserving multi-user collaboration. Implemented using Groq LLM APIs, Qdrant, Ollama embeddings, and LangChain, the architecture provides a scalable and reliable foundation for long-term, multi-domain AI agents.
+
+\textbf{Keywords:} Large Language Models, Memory Management, Retrieval-Augmented Generation, Modular Architecture, Context Management, AI Agents, Vector Databases, Semantic Memory
+
+\clearpage
+
+
+
+\tableofcontents
+
+\addcontentsline{toc}{section}{List of Figures}
+\listoffigures
+\clearpage
+
+
+\section*{Abbreviations}
+
+\begin{description}
+
+    \item[LLM] Large Language Model
+    \item[LC] Long Context
+    \item[LLMs] Large Language Models
+
+    \item[RAG] Retrieval-Augmented Generation
+    \item[RRF] Reciprocal Rank Fusion
+
+    \item[MIRIX] Multi-Agent Memory System
+
+    \item[NLP] Natural Language Processing
+
+    \item[OS] Operating System
+
+    \item[UX] User Experience
+
+    \item[BM25] Best Matching 25 (ranking function)
+
+    \item[HyDE] Hypothetical Document Embeddings
+
+    \item[JSON] JavaScript Object Notation
+
+    \item[XML] Extensible Markup Language
+
+    \item[p95] 95th percentile
+    \item[NOOP] No Operation
+\end{description}
+\clearpage
+
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+
+\section{Introduction}
+
+\subsection{Background}
+
+Large Language Models (LLMs) are increasingly used in intelligent assistants, educational tools, enterprise systems, and collaborative platforms. These systems depend on contextual information such as prior conversations, user preferences, domain knowledge, and documents to produce meaningful and accurate responses. However, LLMs do not possess persistent memory by default and operate within fixed context window limits, meaning they cannot continuously retain long-term information.
+
+To address this limitation, modern AI systems incorporate external memory techniques such as chat history storage, Retrieval-Augmented Generation (RAG), and vector databases. While these approaches allow past information to be stored and retrieved, they typically treat memory as a single, centralized repository. As AI systems expand to support multi-domain usage, long-term interactions, and collaborative scenarios, this monolithic memory design becomes inefficient, difficult to manage, and prone to contextual conflicts.
+
+Simultaneously, users now interact with AI systems in multiple roles  personal, academic, and professional creating the need for structured memory separation and better control over what information is used during interactions. This highlights the importance of designing a modular, scalable, and user-centric memory infrastructure for LLM-based agents.
+
+\subsection{Problem Statement}
+
+Despite advancements in LLM performance, memory management remains a major limitation at both system and user levels.
+
+From the AI system perspective, LLMs have fixed context windows and cannot inherently maintain long-term or cross-session memory. External memory solutions such as RAG extend storage capacity but introduce several architectural challenges. Information is often stored in unified memory pools without clear separation between different contexts, causing retrieval noise where irrelevant information is returned alongside relevant data. Additionally, facts, conversation summaries, and documents are treated similarly, even though they require different storage and retrieval strategies. This lack of structural differentiation reduces retrieval efficiency and makes context management complex. Existing systems also lack built-in mechanisms for modular context switching, selective activation of memory, and organized composition of different knowledge sources.
+
+From the user perspective, current memory systems provide limited control over how personal, academic, or professional information is organized and exposed to the AI model. Multiple aspects of a user's identity  preferences, work tasks, learning materials, or collaborative knowledge  are often merged into a single memory space. This makes it difficult to separate knowledge domains and increases the possibility of irrelevant or sensitive information being retrieved during unrelated interactions. Users cannot easily specify which information should be active in a given conversation, resulting in unnecessary context being sent to the model, increased operational cost, and reduced response relevance.
+
+Furthermore, switching between tasks or roles is not handled systematically. Context switching often depends on implicit assumptions by the system, leading to inconsistent behavior. Current approaches also provide weak support for collaborative memory, where some information must be shared among users while other data remains private. The absence of modular memory isolation limits scalability, reliability, and user trust.
+
+Therefore, the core issue is both architectural and user-centric: existing LLM memory mechanisms are monolithic and unstructured, whereas real-world AI usage requires modular, composable, and user-controlled memory systems capable of separating contexts, supporting multiple memory types, and enabling reliable context switching.
+
+\subsection{Objectives}
+
+The primary objective of this project is to design and implement a Modular Memory Management System for LLM agents, named MemBlocks, where contextual information is organized into independent, attachable memory blocks.
+
+The specific objectives are:
+
+\begin{enumerate}
+    \item To design a modular memory block architecture where each block represents a separate context such as personal data, project knowledge, learning material, or shared team information.
+    
+    \item To organize each memory block into structured sections, including core memory (essential facts), semantic memory (knowledge and events), recursive summary, and resources (documents).
+    
+    \item To enable dynamic attachment and detachment of memory blocks, so that only relevant contexts are active during a conversation.
+    
+    \item To provide user-level control over context exposure, allowing users to manage which memory blocks are used by the LLM.
+    
+    \item To implement intelligent retrieval mechanisms that understand query intent, search different memory sections using appropriate strategies, and reduce irrelevant context.
+    
+    \item To support multi-user collaboration, allowing shared memory blocks while maintaining private user blocks.
+    
+    \item To improve context relevance, scalability, and reliability compared to traditional monolithic memory systems.
+\end{enumerate}
+
+\subsection{Scope of the Project}
+
+This project focuses on the design and implementation of a modular memory infrastructure layer for LLM-based conversational agents. The scope includes:
+
+\begin{enumerate}
+    \item Designing memory blocks and their internal structure,
+    
+    \item Implementing mechanisms to create, attach, detach, and manage memory blocks at runtime,
+    
+    \item Developing retrieval orchestration across multiple memory sections,
+    
+    \item Supporting user-level context control and collaborative memory sharing,
+    
+    \item Integrating with existing storage technologies such as vector databases,
+    
+    \item Demonstrating the system through a prototype conversational AI application.
+\end{enumerate}
+
+The project does not involve:
+
+\begin{enumerate}
+    \item Training new large language models,
+    
+    \item Developing new embedding or vector search algorithms,
+    
+    \item Building a full-scale commercial deployment.
+\end{enumerate}
+
+The primary contribution lies in memory architecture, modular organization, and user-centric context management, which are essential for scalable and practical AI systems.
+
+\section{Literature Review}
+
+The current landscape of Large Language Model (LLM) utility is increasingly defined by the transition from stateless, predictive text engines to stateful, autonomous agents capable of sustained interaction over extended temporal horizons \cite{luo2025large}. However, the foundational architecture of the transformer model presents a significant impediment to this transition: the finite context window. As interactions progress, the sequential nature of input processing necessitates the gradual displacement of historical data, leading to a phenomenon of ``digital amnesia'' that undermines personalization, continuity, and task-specific reliability \cite{liu2024lost}. While the industry has attempted to mitigate these constraints through Retrieval-Augmented Generation (RAG) and the expansion of context windows, these solutions often operate through indiscriminate data accumulation, failing to provide the granular control and modularity required for complex, multi-domain user identities \cite{li2025memos}. Through this section, we analyze the evolution of context management, the rise of agentic memory frameworks, and the necessity of a modular ``cartridge'' approach to memory.
+
+\subsection{The Historical Trajectory of Statehood and Context Management}
+
+The development of LLM memory systems has evolved through three distinct phases, each attempting to resolve the inherent tension between computational efficiency and context retention. Early conversational systems relied on history injection, where previous dialogue turns were simply prepended to the current prompt. Although straightforward, this strategy scales poorly due to the $O(n^2)$ time and space complexity of dot-product self-attention \cite{vaswani2017attention}, causing latency and token-level computation costs to grow rapidly as the conversation length increases.
+
+The second phase saw the emergence of a dual-track strategy: Long Context (LC) expansion and Retrieval-Augmented Generation (RAG). Long Context models, exemplified by the 2024-2025 releases from Google \cite{reid2024gemini} and Anthropic, push the boundaries of the context window to millions of tokens, theoretically allowing the model to ``pre-load'' massive datasets directly into its working memory. Empirical evaluations demonstrate that LC strategies generally outperform RAG in tasks requiring holistic reasoning over static datasets, such as summarization or Wikipedia-based question answering \cite{li2024long}. However, LC is not a complete solution; it remains computationally expensive and often fails to differentiate between relevant and irrelevant information when the ``haystack'' of data becomes too large.
+
+In parallel, RAG introduced a hybrid paradigm where generative capabilities are enhanced through real-time access to external vector databases. This allows for the dynamic querying of massive, evolving knowledge bases without overloading the immediate context window. Despite its utility, conventional RAG suffers from ``retrieval noise'', the tendency to retrieve outdated or semantically similar but contextually irrelevant information, and treats all stored data as an undifferentiated mass \cite{li2024retrieval}.
+
+The third and most current phase involves the development of ``Agentic Memory,'' where memory is no longer a passive repository but an active, self-managed component of the agent's architecture. Systems such as MemGPT \cite{packer2023memgpt} (now Letta) and Mem0 \cite{chhikara2025mem0} have pioneered this approach, treating memory as a tiered system that the agent can autonomously edit, prune, and reorganize.
+
+The evolution depicted in current research highlights a trend toward models that handle longer context windows while simultaneously integrating modular RAG methods to optimize efficiency. However, even as models like Claude 4 and GPT-5 offer improved long-term memory, they remain essentially ``black boxes'' from the user perspective, providing minimal control over how data is partitioned or exposed.
+
+\subsection{Corporate Implementations}
+
+The competitive landscape of 2024 and 2025 has seen major AI providers integrate persistence features directly into their flagship models. OpenAI's ``Memory'' feature, launched in early 2024, utilizes an accessible memory log that can be reviewed and edited by the user, representing a foundational step toward transparency. By mid-2025, this functionality was expanded to allow the system to reference all past conversations, significantly enhancing personalization across sessions.
+
+Anthropic and Google have followed divergent paths. Google unified its Gemini brand, introducing memory features in early 2025 that allow the system to autonomously search through previous conversations to supplement current outputs. Anthropic, through its Claude ``Projects'' functionality, introduced a nascent form of modularity by separating project-specific memory from general saved memory, preventing cross-contamination of unrelated tasks.
+
+Despite these advancements, these systems face systemic challenges in ``Context Isolation'' \cite{wu2024secgpt}. When a user's personal preferences, professional responsibilities, and collaborative work are merged into a single memory space, the risk of ``Context Leakage'' increases. For instance, documents or knowledge relevant to a user's personal life or academic study may be inadvertently surfaced during work-related interactions, or vice versa. In entrepreneurial or startup-oriented workflows, users are often forced to repeatedly re-explain the full scope of an idea in newly isolated conversations to avoid unintended context carryover from casual or personal chats, as the alternative risks contaminating professional queries with irrelevant or sensitive personal information. Furthermore, these systems lack a standardized mechanism for users to ``attach'' or ``detach'' specific knowledge modules. The memory extraction remains largely automated, driven by heuristics that the user cannot easily audit or override.
+
+\subsection{The Shift to Agentic and Autonomous Memory}
+
+Recent literature identifies a transition from passive RAG systems to ``Agentic Memory,'' where the agent actively manages its cognitive state through specialized tools and hierarchical structures.
+
+\subsubsection{Letta (formerly MemGPT)}
+
+Letta \cite{packer2023memgpt} implements a memory hierarchy inspired by virtual memory paging in operating systems. It partitions memory into ``Main Context'' (in-context) and ``External Context'' (out-of-context). The architecture utilizes Core Memory blocks, containing persona and human-specific facts, which the agent can update via tool calls like \texttt{memory\_insert} and \texttt{memory\_replace}. This allows the agent to maintain a persistent state despite the limitations of the fixed context window.
+
+\subsubsection{Mem0}
+
+Mem0 \cite{chhikara2025mem0} focuses on the dynamic extraction of salient facts rather than raw logs. It uses a two-phase pipeline, Extraction and Update, to keep the memory store coherent. When a new fact is identified, Mem0 performs conflict resolution (ADD, UPDATE, DELETE, or NOOP) to ensure the ``latest truth'' is preserved. This approach can reduce token consumption by up to 90\% compared to full-context methods. In particular, Mem0 claims to attain a 91\% lower p95 latency and saves more than 90\% token cost, thereby offering a compelling balance between advanced reasoning capabilities and practical deployment constraints.
+
+\subsubsection{A-mem (Agentic Memory)}
+
+Inspired by the Zettelkasten method, A-mem \cite{xu2025amem} organizes memory as an interconnected network of structured ``notes''.
+
+\begin{enumerate}
+    \item \textbf{Note Construction:} Each interaction is transformed into a note with metadata including keywords, tags, and a contextual description.
+    
+    \item \textbf{Link Generation:} The system establishes connections between notes based on semantic similarity and shared attributes.
+    
+    \item \textbf{Memory Evolution:} Integrating new memories triggers updates to existing historical notes, allowing the agent's ``world model'' to refine itself as knowledge evolves over time.
+\end{enumerate}
+
+\subsection{Modular Knowledge Structures: The MIRIX Framework}
+
+A critical advancement in modularity is presented in the MIRIX (Multi-Agent Memory System) \cite{wang2025mirix} paper. MIRIX addresses the limitations of ``flat'' memory systems by segmenting information into six specialized, structured containers:
+
+\begin{enumerate}
+    \item \textbf{Core Memory:} Foundational user data and agent persona.
+    \item \textbf{Episodic Memory:} Specific interaction sequences and event details.
+    \item \textbf{Semantic Memory:} General facts and concept-based knowledge.
+    \item \textbf{Procedural Memory:} Instructions and skills on how to perform tasks.
+    \item \textbf{Resource Memory:} External documents and tool-related data.
+    \item \textbf{Knowledge Vault:} A secure repository for sensitive information.
+\end{enumerate}
+
+By utilizing a multi-agent framework where each container is managed by a dedicated agent, MIRIX allows for parallel updates and more accurate retrieval. On the LOCOMO benchmark, MIRIX achieved 85.4\% accuracy, outperforming baselines by providing a structured organization that reduces reasoning overhead.
+
+This ``Context Engineering'' allows agents to maintain the illusion of infinite context within a fixed window by intelligently swapping information in and out of the active reasoning space. A critical innovation in this framework is ``Sleep-time Compute,'' where secondary agents update the primary agent's memory blocks during idle periods, reducing the cognitive load on the main agent during active dialogue.
+
+However, these existing frameworks, while powerful, are primarily developer-facing. From a user experience (UX) perspective, the ``Core Memory'' blocks remain largely opaque, and the agent's self-editing capabilities can lead to ``Memory Anchoring,'' where the agent becomes overly constrained by its own history and fails to provide the ``fresh-start'' reasoning requested by the user. Moreover, these do not natively support the user-led creation of independent memory ``containers'' that can be selectively attached to different conversations to prevent domain overlap.
+
+\subsection{Privacy, Safety, and the Risks of Persistent Context}
+
+Persistent memory introduces significant vulnerabilities, particularly context leakage. In multi-persona or multi-session environments, users often expect an AI to remember their preferences while simultaneously desiring transparency and control over what is ``seen'' \cite{ali2025understanding}.
+
+\begin{enumerate}
+    \item \textbf{Context Leakage and Misuse:} Agents can inadvertently exfiltrate private data across sessions. Malicious prompts can trick an agent into revealing sensitive healthcare records or implementation details stored in its memory module.
+    
+    \item \textbf{Inference-Time Risks:} Models can deduce sensitive traits (e.g., location or political leaning) from seemingly ordinary data.
+    
+    \item \textbf{The Need for Transparency:} Current systems provide limited mechanisms for users to see why an agent remembered a specific fact or to ``gate'' information before it enters the long-term bank. Users frequently find that their professional and personal contexts merge, leading to inconsistent outputs and reduced privacy.
+\end{enumerate}
+
+\section{Methodology}
+
+This chapter presents the comprehensive design and implementation methodology for the Memory Blocks system. The proposed architecture addresses fundamental limitations in current Large Language Model (LLM) memory systems by introducing a modular, hierarchical approach to context management. Unlike traditional Retrieval-Augmented Generation (RAG) systems that treat all information uniformly in a single vector database, or systems like MemGPT and Mem0 that provide limited memory differentiation, Memory Blocks implements distinct memory containers with specialized storage semantics, retrieval mechanisms, and update protocols. This section details the system architecture, algorithmic workflows, data structures, and implementation technologies that collectively enable composable, context-aware memory management for AI agents.
+
+\subsection{Feasibility Study}
+
+The MemBlocks project is technically feasible due to recent advancements in Large Language Models, vector databases, and agent orchestration frameworks. The system builds upon reliable and well-documented technologies such as Groq-hosted LLM APIs for inference, Qdrant for high-performance vector storage, Ollama for local embedding generation, and LangChain for managing agent workflows. These tools provide the necessary capabilities for implementing modular memory containers, semantic retrieval, and metadata-driven memory management without requiring the development of core ML models from scratch.
+
+From an operational and economic perspective, the project is feasible within the constraints of our academic minor project. The modular architecture enables incremental development and testing of individual memory blocks, reducing system complexity and risk. Additionally, the reliance on open-source frameworks and lightweight infrastructure minimizes deployment costs and resource requirements. The proposed system can be implemented, evaluated, and extended within the available time frame, making it a practical and sustainable solution for research and prototyping purposes.
+
+
+\subsection{Requirements Analysis}
+
+\subsubsection{Functional Requirements}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{4cm}|p{10cm}|}
+\hline
+\textbf{Requirement} & \textbf{Description} \\
+\hline
+Memory Block Creation & The system must allow creation of independent memory blocks (containers) with unique identifiers, ownership, and descriptive metadata. \\
+\hline
+Dynamic Block Attachment & Memory blocks must be attachable and detachable at runtime, enabling context switching without restarting the agent. \\
+\hline
+Sectioned Memory Structure & Each memory block must internally support structured sections such as core memory, event \& factual memory, resources, and recursive summaries. \\
+\hline
+Core Memory Persistence & The system must maintain a compact core memory containing high-priority user and agent information that is always passed to the LLM. \\
+\hline
+Event \& Factual Memory Storage & The system must store extracted events, facts, and opinions as time-aware textual memory items with metadata such as type, timestamp, confidence, and entities. \\
+\hline
+Selective Retrieval & The retrieval layer must fetch relevant information only from active memory blocks to reduce noise and improve response quality. \\
+\hline
+Sliding Window Context & The system must maintain a short-term sliding window of recent conversation turns for immediate contextual continuity. \\
+\hline
+Controlled Memory Updates & The system must support safe memory write, update, and archival operations based on confidence, relevance, and memory policies. \\
+\hline
+Recursive Summarization & The system must generate and maintain recursive summaries when conversation history exceeds predefined limits. \\
+\hline
+\end{tabular}
+\caption{Functional Requirements}
+\label{tab:functional_requirements}
+\end{table}
+
+\subsubsection{Non-Functional Requirements}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{4cm}|p{10cm}|}
+\hline
+\textbf{Requirement} & \textbf{Description} \\
+\hline
+Scalability & The system must efficiently handle growing memory sizes and multiple memory blocks without significant performance degradation. \\
+\hline
+Low Retrieval Latency & Memory retrieval operations must be optimized to minimize response delay during agent inference. \\
+\hline
+Modularity & The architecture must support independent development, testing, and extension of memory blocks and sections. \\
+\hline
+Memory Isolation & The system must enforce clear separation between personal, shared, read-only, and read-write memory scopes. \\
+\hline
+Maintainability & The system should be easy to update and extend, allowing new memory types or retrieval strategies to be added with minimal changes. \\
+\hline
+Extensibility & The design must allow future integration of additional LLMs, embedding models, or storage backends. \\
+\hline
+Reliability & Memory storage and retrieval operations must be consistent and fault-tolerant to avoid context loss or corruption. \\
+\hline
+Governance \& Traceability & Each memory item must retain metadata for tracking source, usage, updates, and visibility for responsible memory management. \\
+\hline
+\end{tabular}
+\caption{Non-Functional Requirements}
+\label{tab:non_functional_requirements}
+\end{table}
+
+
+\subsection{System Architecture}
+
+The Memory Blocks architecture follows a layered design that separates concerns between long-term memory storage, retrieval processing, and active agent context management. Figure~\ref{fig:memBlocks_diagram1} illustrates the high-level architecture of the Memory Blocks system. The design consists of three primary layers: \textbf{the Memory Space Layer}, which contains multiple user-defined containers; \textbf{the Processing Layer}, which orchestrates retrieval and update operations; and \textbf{the User Interaction Layer}, which manages the conversational interface and integrates context from attached memory blocks. 
+
+Memory Block Repositories serve as independent storage units, each maintaining its own organizational structure and access semantics. Unlike monolithic RAG systems, where documents, chat history, and user preferences co-exist in a single vector database, Memory Blocks segregates information into functionally distinct containers. Each container encapsulates multiple sections, including Resources (immutable user documents and chat transcripts), Core Memory (persistent persona and user attributes), Event and Factual Memory, and Recursive Summary (compressed conversation state). This segregation reduces retrieval noise and enables fine-grained access control.
+
+
+The retrieval layer serves as the bridge between long-term memory blocks and the agent's active context, ensuring that only relevant information is provided to the LLM. It operates exclusively on attached memory blocks, accessing their structured sections: core memory, event and factual memory, resources, and recursive summaries using a hybrid approach that combines semantic similarity over vector embeddings with metadata-based filtering such as recency, confidence, visibility, and type. Core memory and recursive summaries are always included, while event and factual memories are ranked using a composite scoring strategy. Finally, the processed context is merged with the sliding window of recent conversation turns, producing a compact, contextually rich input for the answering LLM. This design maintains modularity, reduces retrieval noise, enforces memory isolation across blocks and sections, and ensures low-latency, accurate context assembly for effective agent reasoning.
+
+The Sliding Window Manager maintains immediate conversational context by storing recent message exchanges. This component implements a bounded buffer that retains the last N messages, providing the LLM with short-term conversational coherence. When the window reaches capacity, the oldest messages are evicted and processed by the Recursive Summary component for long-term compression.
+
+The Agent (async) operates as an asynchronous orchestrator that coordinates memory updates and retrieval operations. Following a set of user-assistant exchange, the agent triggers memory writing processes, including Core Memory updates, Event and Factual Memory additions, and Recursive Summary evolution. These operations execute in parallel with user interaction, ensuring minimal latency impact on response generation.
+
+Finally, the Large Language Model serves as the reasoning engine, receiving context assembled from retrieved memory blocks, sliding window history, and current user input. The LLM generates responses and, critically, produces structured outputs that drive memory updates through specialized prompts described in subsequent sections.
+
+\subsection{Memory Container Structure and Metadata}
+
+Each memory container represents an independent knowledge domain with its own storage backend and retrieval semantics. Container-level metadata governs access patterns, update permissions, and semantic scope.
+
+\subsubsection{Container Metadata Schema}
+
+Every container maintains the following metadata fields that inform retrieval and update logic:
+
+\begin{itemize}
+    \item \textbf{container\_id:} Unique identifier enabling cross-container references and access control.
+    
+    \item \textbf{user\_id:} Associates the container with a specific user account, supporting multi-tenancy.
+    
+    \item \textbf{Container Definition:} A natural language description provided by the user that defines the intended purpose, semantic scope, or domain of the container. 
+    
+    \item \textbf{Creation and Usage Metadata:} Timestamps and access patterns tracking container lifecycle, last modification time, and usage frequency for optimization purposes.
+\end{itemize}
+
+
+\subsection{Memory Section Implementations}
+
+Each container partitions its content into four specialized sections, each optimized for different information types and access patterns.
+
+\subsubsection{Resources Section}
+
+The Resources section maintains immutable, agent-unmodified content, including complete chat transcripts, user-uploaded documents, and agent-identified extractions from conversations. This section implements a document store pattern where each resource is indexed by document ID and stored with chunked and embedded representations. Retrieval from Resources operates through hybrid (semantic+ BM25) search over document embeddings generated by the Nomic Embed Text model via Ollama. Importantly, Resources are never modified by the agent; they serve as an authoritative, append-only record of primary sources. This design parallels traditional RAG document stores but exists within a larger, multi-section container architecture.
+
+\subsubsection{Core Memory Section}
+
+The Core Memory section stores high-priority, persistent information structured into two blocks: persona and human. The persona block encodes the agent's identity, behavioral guidelines, and interaction style. The human block contains enduring facts about the user, such as name, occupation, preferences, and self-identifying attributes. Core Memory content is injected into every LLM interaction via system prompts, ensuring these foundational facts persistently influence agent behavior.
+
+\textbf{Reading Path.} On each interaction, the system constructs a prompt segment incorporating Core Memory.
+
+\textbf{Writing Path.} Updates to Core Memory follow a conservative protocol. After a set of conversation exchanges, a specialized LLM call evaluates whether the interaction contains Core-eligible information. The evaluation prompt explicitly constrains the agent to store only explicit, long-term, user information, preventing inference-based pollution of Core Memory. The prompt instructs the LLM to output a JSON structure indicating whether an update should occur and, if so, the revised persona and human blocks.
+
+Core Memory implements a capacity management mechanism: when content exceeds 90\% of the allocated token budget, the system triggers a controlled rewrite process. This process uses an LLM to compress and consolidate the memory while preserving all critical information.
+
+\subsubsection{Event and Factual Memory Section}
+
+The Event and Factual Memory section stores extracted events, facts, and opinions about the user or the world. Event memories capture time-stamped interactions or activities, while factual memories maintain general knowledge, relationships, or concepts. Each memory item includes key metadata such as type, timestamp, source, confidence, and entities to support efficient querying, reasoning, and temporal tracking.
+
+\textbf{Data Model.} Each memory entry $m_i$ comprises the following fields:
+
+\begin{itemize}
+    \item $c_i$ (content): One-sentence summarized contextual description designed to evolve as new information arrives.
+    
+    \item $t_i$ (timestamp): Temporal marker enabling recency-based retrieval.
+        
+    \item $G_i$ (keywords): Categorical tags including domain tags (e.g., ``programming'', ``AI''), functional tags (e.g., ``optimization'', ``debugging''), and memory-nature tags (``fact'', ``event'', ``opinion'').
+    
+    \item $e_i$ (embedding): Dense vector representation generated from the concatenation of $c_i$, $K_i$, $G_i$, and $X_i$.
+    
+    \item \textbf{type:} Classification as fact, event, or opinion.
+    
+    \item \textbf{confidence:} Numeric score indicating reliability.
+    
+    \item \textbf{source:} Origin of the information (user-provided, inferred, external).
+    
+    \item \textbf{entities:} Named entities and domain concepts extracted from the content.
+\end{itemize}
+
+Additionally, each memory maintains metadata including memory\_id, message\_ids (linking to source conversations), status (active, archived, invalid), and  linked\_memory\_ids (linking to semantically related prior memories).
+
+\textbf{Memory Addition Workflow For Event and Factual Memory.} When a new interaction $I_i$ occurs at time $t_i$, the system executes a five-step pipeline:
+
+\begin{enumerate}
+    \item \textbf{Structured Note Construction.} An LLM processes the interaction using prompt $P_{s1}$ (detailed in Section 3.4) to generate keywords $K_i$, contextual description $c_i$, type classification, and entities. This structured extraction ensures consistent indexing across all memory entries.
+    
+    \item \textbf{Vector Embedding Generation.} The system concatenates $c_i$, $K_i$, and $X_i$ into a single text representation and passes it through the Nomic Embed Text model running on Ollama. This lightweight embedding model generates a dense vector $e_i$ suitable for efficient similarity search in the Qdrant vector database.
+    
+    \item \textbf{Semantic Candidate Filtering.} The system queries Qdrant to compute cosine similarity between $e_i$ and all existing memory embeddings in the Event and Factual section. The top-$k$ most similar memories (typically $k = 10$) are retrieved as candidates. This semantic filtering dramatically reduces the search space for subsequent LLM-based analysis.
+    
+    \item \textbf{Agentic Link Generation.} The new memory proposal and top-$k$ candidates are presented to the LLM via prompt $P_{s2}$. This prompt implements a sophisticated decision logic that determines whether to ADD the memory as a new entry, UPDATE existing memories, ARCHIVE superseded information, INVALIDATE contradicted facts, or perform NO-OP if the information is redundant. The LLM identifies Linked\_Memory\_ids, establishing semantic relationships between the new memory and existing knowledge.
+    
+    \item \textbf{Recursive Memory Evolution.} For each candidate identified in Step 3, the LLM determines whether existing context or tags should be refined to reflect the new knowledge. This evolution process ensures that historical memories remain current and accurately reflect the accumulated knowledge state. The evolved versions replace originals in Qdrant, maintaining semantic consistency across the knowledge graph.
+\end{enumerate}
+
+This workflow represents a significant advancement over MemGPT and MemOS. While MemGPT provides persona and human memory blocks and MemOS offers session-based episodic tracking, neither implements recursive memory evolution with semantic linking. Standard RAG systems lack any notion of memory evolution entirely, treating all documents as static. Memory Blocks' integration of LLM-driven evolution with vector similarity enables the knowledge base to grow organically while maintaining coherence.
+
+\subsubsection{Recursive Summary Section}
+
+The Recursive Summary section implements a progressive compression mechanism for the recent conversation state. Recursive Summary focuses on intermediate-term context, recent goals, decisions, and unresolved threads that are too transient for permanent storage but too important to lose when the sliding window evicts messages.
+
+\textbf{Trigger Conditions.} Recursive Summary updates trigger when conversation tokens exceed a threshold (typically 70-80\% of the LLM's context window). This threshold-based approach ensures the summary remains current without imposing update overhead on every message exchange.
+
+\textbf{Reading Path.} On each LLM invocation, the current summary is injected into the system prompt:
+
+\begin{verbatim}
+<recursive_summary>
+  {{summary}}
+</recursive_summary>
+\end{verbatim}
+
+This placement ensures the LLM has access to recent contextual continuity without requiring full message history.
+
+\textbf{Writing Path.} When the trigger condition activates, the system invokes an LLM with prompt $P_{s3}$, providing the existing summary $S_{old}$ and new messages since the last update $\Delta C$. The LLM produces an updated summary $S_{new}$ that compresses repetition, preserves high-level goals and unresolved questions, and removes resolved details.
+
+\subsection{Prompt Engineering and Agentic Decision Logic}
+
+The Memory Blocks system relies heavily on carefully engineered prompts to guide LLM behavior in memory operations. This section details the three primary prompts that drive structured note construction, memory resolution, and recursive summarization. Each prompt incorporates explicit constraints, output format specifications, and decision frameworks that ensure consistent, high-quality memory management.
+
+\subsubsection{Prompt $P_{s1}$: Structured Note Construction}
+
+Prompt $P_{s1}$ converts raw user queries into structured memory entries for embedding and retrieval. It guides the LLM to extract information for three purposes: hybrid retrieval, memory linking, and future refinement. Keywords must be salient, domain-specific, non-redundant, and free of generic verbs or filler. Context is captured in a single sentence summarizing the topic, supporting recursive evolution. Tags indicate domain, function, and memory nature, avoiding redundancy or over-specificity. Output is strictly formatted in JSON to enable reliable downstream processing.
+
+\subsubsection{Prompt $P_{s2}$: Memory Resolution and Update Agent}
+
+Prompt $P_{s2}$ manages the integration of new information into existing memory by receiving a proposed memory obtained from $P_{s1}$ and its top-$k$ related memories, then deciding memory operations, relationships, and conflict resolution. Possible operations include ADD (store new non-redundant memory), UPDATE (merge and enrich existing memory), ARCHIVE (deactivate outdated memory), INVALIDATE (mark incorrect memory), and NOOP (no change). Conservative principles ensure historical context is preserved, facts are never overwritten by events or opinions, and deletions are avoided. Conflict resolution handles contradictions by preferring higher-confidence or recent information for facts, separating events from facts, and allowing coexistence of differing opinions. The prompt outputs structured JSON specifying the operation, memory parameters, and updates, enabling deterministic execution of the LLM's integration decisions.
+
+\subsubsection{Prompt $P_{s3}$: Recursive Summarization}
+
+Prompt $P_{s3}$ handles the recursive summarization of conversation by updating the previous summary with new messages while preserving essential context. It instructs the LLM to retain high-level goals, decisions, commitments, constraints, and unresolved actions, while removing resolved tasks, repetitive details, and obsolete context. Critical constraints prevent fabricating facts, storing personal or long-term user attributes, or duplicating content from Core or Event/Factual memory. The prompt produces a structured JSON output containing an updated\_summary field, ensuring deterministic integration of the compressed conversational context into the system.
+
+\subsection{Retrieval Strategy and Context Assembly}
+
+The Memory Blocks retrieval strategy implements a multi-stage process that combines container selection, section-specific retrieval, and intelligent ranking to assemble relevant context for LLM invocation. This approach represents a significant departure from monolithic RAG systems that perform flat semantic search across all documents.
+
+\subsubsection{Section-Specific Retrieval}
+
+Within activated containers, retrieval proceeds section by section:
+
+\textbf{Core Memory Retrieval.} Core Memory is always included in full, as it contains high-priority persistent information that should influence every interaction. No ranking or filtering applies to Core Memory; the entire persona and human blocks are injected into the system prompt.
+
+\textbf{Event and Factual Memory Retrieval.} Retrieval from this section uses hybrid search over memory embeddings. The query is expanded using query expansion/HyDE techniques, which is then embedded using the same Nomic Embed Text model, and Qdrant performs hybrid search with BM25 and approximate nearest neighbor search to retrieve candidates. Results are filtered to exclude memories with status ``invalid'' or ``archived'' unless explicitly requested. Additional metadata filters can be applied based on tags, entities, or time ranges when appropriate. These results undergo fusion (Reciprocal Rank Fusion (RRF)) and then reranking using a reranker (Cross-encoder based). Top-k results from these are now ready to be passed to next stage.
+
+\textbf{Resources Retrieval.} Resources are retrieved using hybrid search over document embeddings when the query suggests reference to uploaded files or historical transcripts. This section's retrieval is more conservative, activating only when the query explicitly references documents or when Core/Event memory retrieval yields insufficient context.
+
+\textbf{Recursive Summary Retrieval.} The current Recursive Summary is always included in the system prompt, providing recent conversational continuity. No ranking or filtering applies; the entire summary is injected.
+
+
+\subsubsection{Context Assembly}
+
+After retrieval and ranking, the system assembles the final context for LLM invocation. The assembly follows a structured template that clearly delineates different information sources. Core Memory is placed in the system prompt within XML tags. The Recursive Summary follows in its own tagged section. Retrieved Event and Factual memories are presented in ranked order, each with metadata indicating type, confidence, and timestamp. The sliding window history is appended, followed by the current user input. This structured assembly ensures the LLM can distinguish between persistent facts, recent context, historical events, and current queries, enabling more accurate and context-aware responses.
+\clearpage
+\section{Proposed System design}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1.1\textwidth]{memBlocks_diagram1.png}
+    \caption{Memory Blocks System Architecture Overview}
+    \label{fig:memBlocks_diagram1}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{smart_retriver.png}
+    \caption{Smart Retrieval Pipeline}
+    \label{fig:smart_retriver}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{update_agent.png}
+    \caption{Update Agent Pipeline}
+    \label{fig:update_agent}
+\end{figure}
+
+\clearpage
+
+\section{Project Timeline}
+
+Figure~\ref{fig:project_timeline} illustrates the overall timeline of the proposed project, highlighting the major phases and their respective durations.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1.1\textwidth]{gantt_chart.png}
+    \caption{Project timeline showing major development phases}
+    \label{fig:project_timeline}
+\end{figure}
+
+\clearpage
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

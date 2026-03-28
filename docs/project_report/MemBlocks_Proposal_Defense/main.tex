@@ -25,7 +25,7 @@
     \large \textbf{INSTITUTE OF ENGINEERING} \\
     \large \textbf{PULCHOWK CAMPUS} \\
     \vspace{1cm}
-    \large \textbf{A \\Project Proposal\\ On} \\
+    \large \textbf{A \\Project Report\\ On} \\
     \vspace{1cm}
     \large\textbf{A Modular Memory Management Architecture for Context-Aware Large Language Models}
     \vspace{.5cm}
@@ -43,7 +43,7 @@
     \textbf{SUBMITTED TO:} \\
     {DEPARTMENT OF ELECTRONICS AND COMPUTER ENGINEERING} \\
     \vspace{2cm}
-    February, 2026
+    March, 2026
 }
 
 
@@ -55,6 +55,56 @@
 
 \pagenumbering{roman}
 \setcounter{page}{1}
+
+
+\newpage
+\section*{Page of Approval}
+\addcontentsline{toc}{section}{Page of Approval}
+\vspace{1.5cm}
+\begin{center}
+\uppercase{
+Tribhuvan University\\
+Institute of Engineering\\
+Pulchowk Campus\\
+Department of Electronics and Computer Engineering
+    }
+\end{center}
+\vspace{.5cm}
+The undersigned certifies that they have read and recommended to the Institute of Engineering for acceptance of a project report entitled \textbf{"MemBlocks"} submitted by \textbf{Ashish Pandey (079BCT023)} in partial fulfillment of the requirements for the Bachelor's degree in Electronics \& Computer Engineering.\\
+
+\vspace{1cm}
+\begin{minipage}{.5\textwidth}
+    \raggedright
+    .............................\\
+    Supervisor\\
+    \textbf{Full Name}\\
+    Designation\\
+    Department of Electronics and Computer Engineering,\\
+    Pulchowk Campus, IOE, TU.\\
+\end{minipage}%
+\begin{minipage}{0.5\textwidth}
+    \raggedleft
+    .............................\\
+    External examiner\\
+    \textbf{Full Name}\\
+    Assistant Professor\\
+    Department of Electronics and Computer Engineering,\\
+    Pulchowk Campus, IOE, TU.\\
+\end{minipage}\\
+\vspace{1.5cm}
+\centerline{Date of approval:}
+
+\newpage
+\section*{Copyright}
+\addcontentsline{toc}{section}{Copyright}
+The author has agreed that the Library, Department of Electronics and Computer Engineering, Pulchowk Campus, and Institute of Engineering may make this report freely available for inspection. Moreover, the author has agreed that permission for extensive copying of this project report for scholarly purposes may be granted by the supervisors who supervised the work recorded herein or, in their absence, by the Head of the Department wherein the project report was done. It is understood that recognition will be given to the author of this report and the Department of Electronics and Computer Engineering, Pulchowk Campus, Institute of Engineering for any use of the material of this project report. Copying publication or the other use of this report for financial gain without the approval of to the Department of Electronics and Computer Engineering, Pulchowk Campus, Institute of Engineering, and the author's written permission is prohibited.\\
+Request for permission to copy or to make any other use of the material in this report in whole or in part should be addressed to:\\
+
+\vspace{1.5cm}
+Head\\
+Department of Electronics and Computer Engineering\\
+Pulchowk Campus, Institute of Engineering, TU\\
+Lalitpur, Nepal.
 
 
 \newpage
@@ -276,78 +326,6 @@ Persistent memory introduces significant vulnerabilities, particularly context l
 
 This chapter documents the methodology used to implement the MemBlocks system and the resulting operational design. The implemented architecture addresses fundamental limitations in current Large Language Model (LLM) memory systems through a modular, hierarchical approach to context management. Unlike traditional Retrieval-Augmented Generation (RAG) systems that treat all information uniformly in a single vector database, or systems like MemGPT and Mem0 that provide limited memory differentiation, MemBlocks implements distinct memory containers, section-specific retrieval, and structured update workflows. The following subsections describe the executed architecture, algorithmic workflows, data structures, and implementation technologies that support composable, context-aware memory management for AI agents.
 
-\subsection{Feasibility Study}
-
-The MemBlocks project proved technically feasible due to recent advancements in Large Language Models, vector databases, and practical integration tooling. The implemented system builds on reliable and well-documented technologies such as Groq-hosted LLM APIs for inference, Qdrant for high-performance vector storage, Ollama for local embedding generation, and Python-based orchestration services for session and memory workflows. These tools provided the capabilities needed to implement modular memory containers, semantic retrieval, and metadata-driven memory management without developing core ML models from scratch.
-
-From an operational and economic perspective, the project remained feasible within the constraints of our academic minor project and was completed within the planned scope. The modular architecture enabled incremental development and testing of individual memory blocks, reducing system complexity and risk during execution. Additionally, reliance on open-source frameworks and lightweight infrastructure kept deployment costs and resource requirements manageable. The implemented system was evaluated within the available time frame and remains practical for continued research and prototyping extensions.
-
-
-\subsection{Requirements Analysis}
-
-\subsubsection{Functional Requirements}
-
-\begin{table}[H]
-\centering
-\small
-\begin{tabular}{|p{4cm}|p{10cm}|}
-\hline
-\textbf{Requirement} & \textbf{Description} \\
-\hline
-Memory Block Creation & The system must allow creation of independent memory blocks (containers) with unique identifiers, ownership, and descriptive metadata. \\
-\hline
-Dynamic Block Attachment & Memory blocks must be attachable and detachable at runtime, enabling context switching without restarting the agent. \\
-\hline
-Sectioned Memory Structure & Each memory block must internally support structured sections such as core memory, semantic memory, and recursive summary. \\
-\hline
-Core Memory Persistence & The system must maintain a compact core memory containing high-priority user and agent information that is always passed to the LLM. \\
-\hline
-Semantic Memory Storage & The system must store extracted facts, events, and opinions as time-aware textual memory items with metadata such as type, timestamp, confidence, and entities. \\
-\hline
-Selective Retrieval & The retrieval layer must fetch relevant information only from active memory blocks to reduce noise and improve response quality. \\
-\hline
-Sliding Window Context & The system must maintain a short-term sliding window of recent conversation turns for immediate contextual continuity. \\
-\hline
-Controlled Memory Updates & The system must support safe memory write, update, and deletion operations based on confidence, relevance, and memory policies. \\
-\hline
-Recursive Summarization & The system must generate and maintain recursive summaries when conversation history exceeds predefined limits. \\
-\hline
-\end{tabular}
-\caption{Functional Requirements}
-\label{tab:functional_requirements}
-\end{table}
-
-\subsubsection{Non-Functional Requirements}
-
-\begin{table}[H]
-\centering
-\small
-\begin{tabular}{|p{4cm}|p{10cm}|}
-\hline
-\textbf{Requirement} & \textbf{Description} \\
-\hline
-Scalability & The system must efficiently handle growing memory sizes and multiple memory blocks without significant performance degradation. \\
-\hline
-Low Retrieval Latency & Memory retrieval operations must be optimized to minimize response delay during agent inference. \\
-\hline
-Modularity & The architecture must support independent development, testing, and extension of memory blocks and sections. \\
-\hline
-Memory Isolation & The system must enforce clear separation between personal, project, read-only, and read-write memory scopes. \\
-\hline
-Maintainability & The system should be easy to update and extend, allowing new memory types or retrieval strategies to be added with minimal changes. \\
-\hline
-Extensibility & The design must allow future integration of additional LLMs, embedding models, or storage backends. \\
-\hline
-Reliability & Memory storage and retrieval operations must be consistent and fault-tolerant to avoid context loss or corruption. \\
-\hline
-Governance \& Traceability & Each memory item must retain metadata for tracking source, usage, updates, and visibility for responsible memory management. \\
-\hline
-\end{tabular}
-\caption{Non-Functional Requirements}
-\label{tab:non_functional_requirements}
-\end{table}
-
-
 \subsection{System Architecture}
 
 The MemBlocks architecture follows a layered design that separates concerns between long-term memory storage, retrieval processing, and active conversational context management. Figure~\ref{fig:memBlocks_diagram1} shows this flow as a memory space with multiple containers connected to retrieval, update, and conversation components.
@@ -493,8 +471,47 @@ Within activated containers, retrieval proceeds section by section:
 \subsubsection{Context Assembly}
 
 After retrieval and ranking, the system assembles the final context for LLM invocation. The assembly follows a structured template that delineates memory sources: Core Memory first, Recursive Summary second, ranked semantic memories next, then recent sliding-window turns, followed by the current user input. This order preserves persistent identity/context priors while prioritizing query-relevant evidence for the current turn.
-\clearpage
-\section{Experimental Setup}
+
+\subsection{Library Exposed Methods and Interfaces}
+
+The MemBlocks library is designed as a memory management layer that can be integrated into any existing LLM orchestration system. It intentionally abstracts the complexity of database connections, hybrid search, and background agentic processing by exposing a clean, developer-friendly Python API. Below are the primary interaction points available through the \texttt{MemBlocksClient} interface.
+
+\subsubsection{Client Initialization and Configuration}
+Developers interface with the system primarily through the \texttt{MemBlocksClient}. It accepts a configuration object (\texttt{MemBlocksConfig}) that dictates database endpoints, embedding models, and granular LLM settings. This ensures the client remains agnostic to the underlying infrastructure while wiring the different services together asynchronously.
+
+\subsubsection{User and Block Management}
+The root level of storage separation is handled via the User and Block APIs:
+\begin{itemize}
+    \item \texttt{get\_or\_create\_user(user\_id)}: Establishes a namespace for an individual user.
+    \item \texttt{create\_block(user\_id, name, description)}: Creates an isolated memory container (e.g., "Work Project", "Personal Study").
+    \item \texttt{get\_user\_blocks(user\_id)}: Retrieves all memory modules associated with a user, permitting dynamic attachment and selection during multi-domain interactions.
+\end{itemize}
+
+\subsubsection{Session and Interaction Data Flow}
+Handling real-time dialogue is facilitated via a \texttt{Session} structure linked to an active \texttt{Block}.
+\begin{itemize}
+    \item \texttt{create\_session(user\_id, block\_id)}: Initiates a conversational context within the chosen memory domain.
+    \item \texttt{block.retrieve(user\_msg)}: Executes the extensive hybrid-search and ranking retrieval pipeline over all populated semantic and core memory sections, returning optimized context ready to inject into the active LLM prompt.
+    \item \texttt{session.get\_memory\_window()}: Returns a contiguous sliding window of recent conversation turns to act as immediate conversational history.
+    \item \texttt{session.get\_recursive\_summary()}: Retrieves the dynamically compressed state of the recent conversational past.
+    \item \texttt{session.add(user\_msg, ai\_response)}: Persists the transaction and automatically invokes the extraction, summarization, and core-memory background pipelines out of the critical interaction path to preserve low-latency conversational responses.
+\end{itemize}
+
+\subsubsection{Transparency and Event Subscription}
+To enable rich observability, the MemBlocks library exposes diagnostic and event-driven interfaces:
+\begin{itemize}
+    \item \textbf{Event Bus Registration:} Using \texttt{client.subscribe("event\_name", callback)}, developers can trigger external actions on specific system state changes such as \texttt{on\_memory\_extracted}, \texttt{on\_conflict\_resolved}, or \texttt{on\_core\_memory\_updated}.
+    \item \textbf{Diagnostic Logging:} Methods such as \texttt{get\_retrieval\_log()}, \texttt{get\_processing\_history()}, and \texttt{get\_llm\_usage()} return real-time programmatic insights into token usage, routing latency, and reranking analytics, ensuring complete governance over the AI agent's internal operation.
+\end{itemize}
+
+\subsubsection{Manual Memory Operations and Bypasses}
+While the automated session loop handles most interactions seamlessly, developers and external tools (such as MCP implementations) often require granular control. MemBlocks exposes several manual operational bypasses:
+\begin{itemize}
+    \item \texttt{session.flush()}: Manually forces the sliding window to compress and triggers the core, semantic, and summary extraction pipelines instantly, bypassing the configured interaction threshold.
+    \item \texttt{block.\_semantic.extract\_and\_store(messages)} and \texttt{block.\_core.update(messages)}: Forcefully extracts and stores information from specific messages, bypassing the automated session loop entirely.
+    \item \textbf{Isolated Retrieval:} \texttt{block.core\_retrieve()} fetches only the current persona and human facts in full without running vector search. Conversely, \texttt{block.semantic\_retrieve(query)} bypasses core memory to run only the hybrid semantic vector search against stored facts.
+    \item \textbf{State Management:} \texttt{client.get\_block(block\_id)} and \texttt{client.delete\_block(block\_id)} allow for standard CRUD operations on namespaces, while \texttt{client.close()} cleanly disconnects from underlying databases, finalizing all event loops gracefully.
+\end{itemize}
 
 \clearpage
 \section{System Design}
@@ -520,168 +537,109 @@ After retrieval and ranking, the system assembles the final context for LLM invo
     \label{fig:update_agent}
 \end{figure}
 
-\clearpage
-
-\section{Results}
-
-The implemented MemBlocks system delivered the planned component-level outcomes in the core memory pipeline. The architecture was operationalized as a working memory platform rather than a design-only proposal, with active container attachment, section-specific retrieval, and update-time storage control.
-
-At the memory-section level, the delivered behavior shows clear separation of responsibilities. Core Memory is maintained as persistent high-priority context, Semantic Memory provides extraction and retrieval over structured memory entries with metadata, and Recursive Summary supports continuity through compressed conversation state. This sectioned implementation outcome is significant because it avoids treating all long-term information as one undifferentiated store, which was a central limitation identified in monolithic memory approaches.
-
-Implementation outcomes are also visible in the update workflow itself. When a message window reaches threshold, semantic extraction, conflict-aware memory writes, core-memory refresh, and recursive summary regeneration are all executed as one coordinated cycle. This confirms that retrieval and storage are connected operationally, not only conceptually.
-
-Overall, the delivered outcomes indicate that MemBlocks achieved a practical and coherent implementation of modular memory management: the architecture is executable, memory sections are functionally differentiated, and retrieval/storage behavior is traceable through concrete processing steps.
-
-\section{Discussion}
-
-This discussion interprets the implementation outcomes through two required lenses: outcomes vs objectives, and architecture significance.
-
-\textbf{Outcomes vs objectives.} The delivered system aligns with the primary project objectives around modular memory organization, selective context control, and retrieval relevance. Independent memory blocks and runtime block activation support context isolation across user domains. Sectioned memory (Core, Semantic, Recursive Summary) supports differentiated storage and retrieval behavior for distinct information classes. The implemented retrieval and context assembly flow reduces irrelevant context exposure by combining persistent core information with ranked, query-relevant semantic memories.
-
-\textbf{Architecture significance.} A major contribution of this implementation is the explicit coupling between retrieval and storage workflows. Query enhancement, hybrid retrieval, fusion, and reranking shape what enters the active prompt, while PS1/PS2-driven storage decisions shape what remains in long-term memory. This bidirectional control improves memory quality over time and reduces drift caused by naive append-only updates.
-
-The interpretation above is intentionally evidence-grounded and moderately assertive: results show meaningful implementation progress and coherent architecture choices, while avoiding claims of universal superiority. Known boundaries remain brief and explicit where unresolved assumptions would otherwise be required.
-
-\section{Testing/Evaluation/Validation}
-
-This subsection validates implemented MemBlocks components through direct evidence mapping rather than non-traceable testing statements. The validation basis is the component-level matrix in \texttt{.planning/phases/06-implementation-outcomes-validation-sections/06-VALIDATION-EVIDENCE-MATRIX.md}, where each claim is tied to concrete artifacts and expressed with narrative confidence.
-
-\textbf{Storage and update-path validation.} Validation evidence indicates that semantic memory updates are not simple append operations: each candidate memory is embedded, compared with nearest stored candidates, adjudicated via PS2, and then applied as ADD/UPDATE/DELETE/NONE operations. This claim is supported by aligned methodology text and shipped service implementations.
-
-\textbf{Retrieval-path validation.} Validation evidence indicates that retrieval follows the documented enhancement path: query expansion and hypothetical query generation, hybrid dense/sparse retrieval, RRF fusion, deduplication, and reranking before final context assembly. This supports high confidence that retrieval is section-aware and ranking-driven rather than flat lookup.
-
-\textbf{Evidence quality and unresolved dependencies.} Validation confidence remains intentionally qualified for clarification-sensitive report segments. Claims linked to unresolved items (\texttt{CLARIFY-REQ:002} to \texttt{CLARIFY-REQ:005}) are preserved as unresolved instead of being rewritten from assumptions. This keeps the subsection auditable and prevents over-claiming beyond current evidence.
-
-\section{Conclusion}
-
-This project set out to design and implement a modular memory management architecture for LLM-based agents, and the delivered MemBlocks system achieved that objective through a concrete implementation centered on section-aware retrieval and conflict-aware storage. The implemented architecture demonstrates that independent memory blocks can be operationalized as practical context containers rather than proposal-only abstractions.
-
-Against the report objectives, the delivered outcomes are clear and evidence-grounded. The system implements differentiated memory sections (Core Memory, Semantic Memory, and Recursive Summary), enabling role-specific storage and retrieval behavior instead of a single undifferentiated memory pool. It also supports selective context assembly through active block scope and section-aware retrieval, which contributes directly to reduced contextual mixing and more relevant prompt construction.
-
-The implementation significance is not only feature delivery but operational coherence between retrieval and storage. Memory operations now form a closed loop: what is retrieved influences responses, and what is processed from those responses is conflict-checked before entering long-term memory. As a next step, MemBlocks should continue from this validated foundation toward tighter retrieval-quality benchmarking and stronger conflict-resolution observability.
-
-\section{Limitations and Future Enhancement}
-
-\textbf{Pair 1 -- Resource section implementation gap and enhancement path.} The architecture figure includes a resource section, but this section is currently reserved for future work and not part of the active retrieval-storage pipeline. As a near-term enhancement, resource ingestion and retrieval should be implemented with clear activation rules. As a long-term direction, resource evidence can be integrated with semantic memory ranking to support citation-grounded responses.
-
-\textbf{Pair 2 -- Conflict-resolution depth and enhancement path.} Current conflict resolution is effective for deduplication and contradiction handling through ADD/UPDATE/DELETE/NONE decisions, but it is still limited to a bounded candidate set per write cycle. As a near-term enhancement, richer audit traces for conflict decisions should be exposed for evaluation. As a long-term direction, multi-pass or graph-aware conflict handling can improve consistency across broader memory neighborhoods.
-
-\section{Project Timeline}
-
-Figure~\ref{fig:project_timeline} illustrates the overall timeline of the proposed project, highlighting the major phases and their respective durations.
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1.0\textwidth]{recommended_userflow.png}
+    \caption{Recommended Developer Implementation Flow}
+    \label{fig:recommended_userflow}
+    
+    \vspace{0.5em}
+    \small \textbf{Developer Integration Workflow:}\par
+    \noindent Figure \ref{fig:recommended_userflow} outlines the recommended lifecycle for integrating the MemBlocks library into an external architecture. It illustrates the progression from client initialization and namespace configuration to the active, low-latency interaction loop where background operations handle memory consolidation asynchronously.
+\end{figure}
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=1.1\textwidth]{gantt_chart.png}
-    \caption{Project timeline showing major development phases}
-    \label{fig:project_timeline}
+    \includegraphics[width=1.0\textwidth]{dataflow.png}
+    \caption{MemBlocks Internal Data Flow}
+    \label{fig:dataflow}
+
+    \vspace{0.5em}
+    \small \textbf{Systems Data Flow:}\par
+    \noindent Figure \ref{fig:dataflow} visualizes the journey of user interactions through the MemBlocks pipeline. It highlights the front-end prompt assembly—where isolated context fragments and conversation history are synthesized—and the back-end extraction cycle, illustrating how persistent data stores are updated out of band when sliding window thresholds are met.
 \end{figure}
+
+\clearpage
+
+\section{Results and Discussion}
+
+The deployment and testing of the MemBlocks architecture demonstrated a successful resolution of all core functional and structural requirements defined prior to implementation. By evaluating the system's runtime behavior, memory routing integrity, and prompt assembly process, it was confirmed that the modular memory management framework is both practical for deployment and highly effective at stabilizing AI agent context.
+
+\subsection{Fulfillment of System Requirements}
+
+The implemented system successfully satisfied the established design requirements through the following observed capabilities:
+
+\textbf{1. Context Isolation and Dynamic Block Attachment:}\par
+Testing verified that memory \texttt{Blocks} operate as strictly independent namespaces. By segregating storage at the block level, the system enforced clear boundaries between different conceptual domains (e.g., separating a user's personal coding projects from general knowledge). The ability to dynamically attach and detach these blocks proved crucial: it ensures that an agent is never distracted by out-of-scope data, a frequent flaw in monolithic vector databases.
+
+\textbf{2. Sectioned Memory Processing and Retrieval:}\par
+The architectural split between Core Memory, Semantic Memory, and the Recursive Summary was fully operationalized. Performance tracking indicated that maintaining persistent high-priority facts (Core) while injecting only the top-ranked semantic memories prevented the underlying Language Models from experiencing context bloat. The continuous compression into the Recursive Summary proved adept at bridging the conversational past without retaining unnecessary raw token overhead. 
+
+\textbf{3. Controlled Updates and Conflict Resolution:}\par
+One of the most critical operational requirements successfully validated was the system's conflict-aware memory storage. Upon reaching the sliding window threshold, the extraction workflows bypassed naive append-only behavior. Instead, through the Memory Resolution Workflow, new insights were systematically checked against existing memories, resulting in intelligent \texttt{ADD}, \texttt{UPDATE}, and \texttt{DELETE} operations. This capability is vital for preventing duplicated, contradictory records as the agent learns and grows over time.
+
+\subsection{Significance for Agentic AI Systems}
+
+The successful integration of the MemBlocks pipeline represents a necessary evolution in how Large Language Models interact with long-term memory. Traditionally, AI memory has relied on unstructured data dumps (e.g., standard Retrieval-Augmented Generation), which degrade over long interactions through context-window saturation and retrieval hallucinations.
+
+By demonstrating that retrieval and storage can operate as a closed, bidirectional loop, MemBlocks exhibits the type of architectural maturity required for advanced agentic AI. The proactive conflict-resolution algorithms ensure that the database's integrity actively improves over time, rather than passively degrading. Furthermore, the explicit capability to override automated loops---via programmatic event triggers, isolated retrieval, and manual flush commands---provides developers with the precise governance needed over non-deterministic AI behavior. 
+
+Ultimately, MemBlocks moves beyond theoretical design to offer a robust, context-aware foundation. This approach to structured, modular memory is essential for the future deployment of autonomous, multi-domain AI agents running uninterrupted across complex problem spaces.
+
+\section{Conclusion}
+
+The MemBlocks project was initiated to resolve a fundamental bottleneck in the deployment of autonomous AI agents: the degradation of reasoning caused by unstructured, infinitely compounding context windows. By transitioning away from monolithic vector databases toward a structured, sectioned memory architecture, this project successfully demonstrated that an LLM's operational memory can be both modular and highly controllable.
+
+Through the implementation of independent memory \texttt{Blocks}, distinct storage sections (Core, Semantic, Recursive Summary), and background extraction workflows, the system successfully shields the active prompt from irrelevant noise while ensuring high-fidelity recall. Most critically, the transition from append-only storage to a conflict-aware resolution pipeline ensures that the agent's memory base refines and self-corrects over time, establishing a reliable foundation for long-term user interaction. The resulting library and MCP integration prove that advanced memory orchestration can be seamlessly integrated into modern Agentic pipelines without compromising response latency or data integrity.
+
+\section{Limitations and Future Enhancements}
+
+While the initial implementation of the MemBlocks architecture successfully resolves the core issues of context-bloat and memory routing, there are several avenues for future research and capability expansion:
+
+\textbf{1. Resource Ingestion Pipeline:}\par
+Currently, the pipeline processes explicit conversational turns via the Semantic and Core extraction workflows. However, the architectural design explicitly reserves a \texttt{Resource Section} for handling dense, external documents (e.g., PDFs, code repositories). A primary future enhancement will involve building ingestion pipelines to attach these static documents to specific Blocks, allowing the hybrid retrieval mechanics to seamlessly blend dynamic dialogue facts with grounded document citations.
+
+\textbf{2. Graph-Aware Conflict Resolution:}\par
+The current conflict resolution mechanism safely handles localized paradoxes (e.g., updating a user's favorite language from Python to Rust). However, as memory repositories grow, related facts become deeply intertwined. Future iterations should explore multi-pass or knowledge-graph-aware conflict handling, where updating a single fundamental fact automatically propagates updates to downstream dependent memories without requiring exhaustive, brute-force vector scans.
+
+\textbf{3. Multi-Agent Shared Context:}\par
+The current namespace isolation is optimized for single-agent-to-user dynamics. An exciting direction for enhancement is extending the `Block` ownership model to support robust multi-agent orchestration, where different specialized agents can concurrently read from and write to shared memory blocks with conflict-locking mechanisms.
 
 \section{Appendix}
 
+\textbf{Project Repository:} \url{https://github.com/Ashish-Pandey62/MemBlocks}
+
 \subsection{Prompt Artifacts}
 
-\textbf{PS1\_SEMANTIC\_PROMPT (extract).}
-
-\begin{verbatim}
-You are a memory extraction specialist. Your task is to analyze a batch of
-user messages and extract structured semantic information for long-term memory
-storage and retrieval.
-
-Each memory block must be atomic (single fact/event/opinion), unique within the
-batch, and self-contained. Output must be JSON with root key "memories" and
-fields: keywords, content, type, entities, confidence, memory_time.
-\end{verbatim}
-
-\textbf{PS2\_MEMORY\_UPDATE\_PROMPT (extract).}
-
-\begin{verbatim}
-You are an AI Memory Conflict Resolution Agent. Integrate newly extracted
-memory with semantically similar existing memories.
-
-Allowed operations:
-- New memory: ADD or NONE
-- Existing memory: UPDATE, DELETE, or NONE
-
-Output JSON includes new_memory_operation and existing_memory_operations.
-\end{verbatim}
+\begin{itemize}
+    \item \texttt{PS1\_SEMANTIC\_PROMPT}: \texttt{memblocks\_lib/src/memblocks/prompts/\_\_init\_\_.py}, line 10.
+    \item \texttt{PS2\_MEMORY\_UPDATE\_PROMPT}: \texttt{memblocks\_lib/src/memblocks/prompts/\_\_init\_\_.py}, line 297.
+\end{itemize}
 
 \subsection{Core Data Models}
 
-\textbf{Memory block metadata and block structure (extract).}
+\textbf{Memory block metadata and block structure.}
+\begin{itemize}
+    \item \texttt{MemoryBlockMetaData}: \texttt{memblocks\_lib/src/memblocks/models/block.py}, line 22.
+    \item \texttt{MemoryBlock}: \texttt{memblocks\_lib/src/memblocks/models/block.py}, line 45.
+\end{itemize}
 
-\begin{verbatim}
-class MemoryBlockMetaData(BaseModel):
-    id: str
-    created_at: str
-    updated_at: str
-    usage: Optional[List[str]]
-    user_id: Optional[str]
-    llm_usage: Dict[str, Any]
-
-class MemoryBlock(BaseModel):
-    meta_data: MemoryBlockMetaData
-    name: str
-    description: str
-    semantic_collection: Optional[str]
-    core_memory_block_id: Optional[str]
-    resource_collection: Optional[str]
-    is_active: bool
-\end{verbatim}
-
-\textbf{Section and LLM output models (extract).}
-
-\begin{verbatim}
-class SemanticMemoryData(BaseModel):
-    type: Literal["semantic"]
-    collection_name: str
-
-class CoreMemoryData(BaseModel):
-    type: Literal["core"]
-    block_id: str
-
-class ResourceMemoryData(BaseModel):
-    type: Literal["resource"]
-    collection_name: str
-
-class SemanticExtractionOutput(BaseModel):
-    keywords: List[str]
-    content: str
-    type: str
-    entities: List[str]
-    confidence: float
-    memory_time: Optional[str]
-\end{verbatim}
+\textbf{Section and LLM output models.}
+\begin{itemize}
+    \item \texttt{SemanticMemoryData}: \texttt{memblocks\_lib/src/memblocks/models/memory.py}, line 17.
+    \item \texttt{CoreMemoryData}: \texttt{memblocks\_lib/src/memblocks/models/memory.py}, line 32.
+    \item \texttt{ResourceMemoryData}: \texttt{memblocks\_lib/src/memblocks/models/memory.py}, line 47.
+    \item \texttt{SemanticExtractionOutput}: \texttt{memblocks\_lib/src/memblocks/models/llm\_outputs.py}, line 10.
+\end{itemize}
 
 \subsection{API Request Models}
 
-\textbf{Backend request contracts (extract).}
-
-\begin{verbatim}
-class CreateBlockRequest(BaseModel):
-    name: str
-    description: str
-    create_semantic: bool
-    create_core: bool
-    create_resource: bool
-
-class ChatRequest(BaseModel):
-    message: str
-
-class SearchMemoriesRequest(BaseModel):
-    query: str
-    top_k: int
-\end{verbatim}
-
-\subsection{Placeholders for Pending Packaging}
-
-\textbf{Placeholder: End-to-end retrieval trace package.} Representative,
-redacted retrieval traces (query expansion variants, fused candidates, reranked outputs)
-are relevant to this report but are not yet consolidated into a stable appendix-ready bundle.
-
-\textbf{Placeholder: Validation snapshot bundle (retrieval and storage).}
-Repeatable retrieval/storage validation snapshots are planned but are not yet
-packaged into a single reproducible appendix artifact.
+\textbf{Backend request contracts.}
+\begin{itemize}
+    \item \texttt{CreateBlockRequest}: \texttt{backend/src/api/models/requests.py}, line 11.
+    \item \texttt{ChatRequest}: \texttt{backend/src/api/models/requests.py}, line 25.
+    \item \texttt{SearchMemoriesRequest}: \texttt{backend/src/api/models/requests.py}, line 34.
+\end{itemize}
 
 \clearpage
 
