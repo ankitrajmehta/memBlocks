@@ -1,18 +1,3 @@
-# MemBlocks MCP Server
-
-MemBlocks provides a Model Context Protocol (MCP) server that enables AI assistants like Claude Desktop, OpenCode, and other MCP-compatible clients to interact with your memory system.
-
-## What is MCP?
-
-The Model Context Protocol (MCP) is a standardized way for AI assistants to access external tools and data sources. With MemBlocks MCP server, your AI assistant can:
-
-- Create and manage memory blocks
-- Store and retrieve memories
-- Query your knowledge base
-- Maintain context across conversations
-
----
-
 ## Quick Start
 
 ### Prerequisites
