@@ -24,8 +24,7 @@ class OllamaLLMProvider(LLMProvider):
     """
     ``LLMProvider`` implementation using ``langchain_ollama.ChatOllama``.
 
-    Connects to a local Ollama server to run open-source models like
-    llama3.2, mistral, etc. No API key required.
+    Connects to a local Ollama server to run open-source models. No API key required.
 
     Can be instantiated either from a full ``MemBlocksConfig`` (legacy path)
     or from a bare ``LLMTaskSettings`` + ``base_url`` (per-task path used by
@@ -41,10 +40,11 @@ class OllamaLLMProvider(LLMProvider):
 
         Args:
             config: Library configuration.  Reads ``ollama_base_url``,
-                    ``llm_model``, ``llm_convo_temperature``, and optional
-                    Arize monitoring fields.
+                    ``ollama_keep_alive``, ``llm_model``, ``llm_convo_temperature``,
+                    and optional Arize monitoring fields.
         """
-        self._base_url: str = config.ollama_base_url or "http://localhost:11434"
+        self._base_url: str = config.ollama_base_url
+        self._keep_alive: str = config.ollama_keep_alive or "10s"
         self._model: str = config.llm_model
         self._default_temperature: float = config.llm_convo_temperature
         self._usage_tracker: Optional["LLMUsageTracker"] = None
@@ -82,6 +82,7 @@ class OllamaLLMProvider(LLMProvider):
         cls,
         task_settings: "LLMTaskSettings",
         base_url: str = "http://localhost:11434",
+        keep_alive: str = "10s",
         arize_space_id: Optional[str] = None,
         arize_api_key: Optional[str] = None,
         arize_project_name: str = "memBlocks",
@@ -97,6 +98,8 @@ class OllamaLLMProvider(LLMProvider):
             task_settings: Task-specific LLM settings (model, temperature).
                 ``fallback_models`` and ``enable_thinking`` are ignored for Ollama.
             base_url: Ollama server base URL (default: http://localhost:11434).
+            keep_alive: How long to keep the model loaded after last request
+                (default: "10s"). Use duration string like "10s", "5m", "1h", or "-1" for unlimited.
             arize_space_id: Optional Arize monitoring space ID.
             arize_api_key: Optional Arize monitoring API key.
             arize_project_name: Arize project name.
@@ -111,6 +114,7 @@ class OllamaLLMProvider(LLMProvider):
         """
         instance = cls.__new__(cls)
         instance._base_url = base_url
+        instance._keep_alive = keep_alive
         instance._model = task_settings.model
         instance._default_temperature = task_settings.temperature
         instance._usage_tracker = usage_tracker
@@ -207,6 +211,7 @@ class OllamaLLMProvider(LLMProvider):
             model=self._model,
             temperature=temperature,
             base_url=self._base_url,
+            keep_alive=self._keep_alive,
             format="json",
         )
 
@@ -300,6 +305,7 @@ class OllamaLLMProvider(LLMProvider):
             model=self._model,
             temperature=effective_temp,
             base_url=self._base_url,
+            keep_alive=self._keep_alive,
         )
         t0 = time.monotonic()
         error_msg: Optional[str] = None

@@ -9,6 +9,7 @@ Public API surface — import from here for convenience:
     from memblocks.llm.base import LLMProvider
     from memblocks.llm.groq_provider import GroqLLMProvider
     from memblocks.llm.gemini_provider import GeminiLLMProvider
+    from memblocks.llm.ollama_provider import OllamaLLMProvider
     from memblocks.prompts import PS1_SEMANTIC_PROMPT
 """
 

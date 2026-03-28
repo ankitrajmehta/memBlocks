@@ -68,13 +68,6 @@ class MemBlocksConfig(BaseSettings):
         None, validation_alias="OPENROUTER_API_KEY"
     )
 
-    # Ollama local server
-    ollama_base_url: str = Field(
-        "http://localhost:11434",
-        validation_alias="OLLAMA_BASE_URL",
-        description="Base URL for local Ollama server",
-    )
-
     # Cohere re-ranker API
     cohere_api_key: Optional[str] = Field(
         None,
@@ -211,6 +204,17 @@ class MemBlocksConfig(BaseSettings):
     # -------------------------------------------------------------------------
     ollama_base_url: str = Field(
         "http://localhost:11434", validation_alias="OLLAMA_BASE_URL"
+    )
+    ollama_base_url_embeddings: str = Field(
+        "http://localhost:11435", validation_alias="OLLAMA_BASE_URL_EMBEDDINGS"
+    )
+    ollama_keep_alive: str = Field(
+        "10m",
+        validation_alias="OLLAMA_KEEP_ALIVE",
+        description=(
+            "How long to keep Ollama models loaded in memory after last request. "
+            "Duration string: '10s', '5m', '1h', or '-1' for unlimited."
+        ),
     )
     embeddings_model: str = Field(
         "nomic-embed-text", validation_alias="EMBEDDINGS_MODEL"

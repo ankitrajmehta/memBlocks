@@ -612,13 +612,12 @@ response = await client.conversation_llm.chat([{"role": "user", "content": "Hell
 Backend using [`langchain-ollama`](https://pypi.org/project/langchain-ollama/) to run open-source models locally.
 
 ```python
-from memblocks.llm.ollama_provider import OllamaLLMProvider
 from memblocks import MemBlocksClient, MemBlocksConfig
 
 config = MemBlocksConfig(
     llm_provider_name="ollama",
     ollama_base_url="http://localhost:11434",
-    llm_model="llama3.2:3b",
+    llm_model="local-llm-model",
 )
 
 client = MemBlocksClient(config)
@@ -630,12 +629,12 @@ response = await client.conversation_llm.chat([{"role": "user", "content": "Hell
 | Field | Description |
 |-------|-------------|
 | `ollama_base_url` | Ollama server URL. Default: `http://localhost:11434` |
-| `llm_model` | Model name, e.g. `llama3.2:3b`, `mistral`, `llama3.1` |
+| `llm_model` | Local model name (e.g. `local-llm-model`, `llama3`, `mistral`) |
 
 **Prerequisites:**
 1. Install Ollama: https://ollama.com
 2. Run `ollama serve`
-3. Pull a model: `ollama pull llama3.2:3b`
+3. Pull a model: `ollama pull <model-name>`
 
 ### Optional Arize Monitoring
 
@@ -717,7 +716,7 @@ from memblocks import LLMTaskSettings
 
 task = LLMTaskSettings(
     provider="ollama",          # "groq" | "gemini" | "openrouter" | "ollama"
-    model="llama3.2:3b",
+    model="local-llm-model",
     temperature=0.7,
     fallback_models=[               # OpenRouter only
         "anthropic/claude-3-5-haiku",

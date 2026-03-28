@@ -140,6 +140,7 @@ def _build_provider(
         return OllamaLLMProvider.from_task_settings(
             task_settings=task_settings,
             base_url=config.ollama_base_url,
+            keep_alive=config.ollama_keep_alive,
             arize_space_id=config.arize_space_id,
             arize_api_key=config.arize_api_key,
             arize_project_name=config.arize_project_name,

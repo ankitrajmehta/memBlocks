@@ -325,19 +325,18 @@ client = MemBlocksClient(config)
 | Enable thinking | `OPENROUTER_ENABLE_THINKING` / `openrouter_enable_thinking` | Pass `enable_thinking: true` to the OpenRouter API (requires a reasoning-capable model) |
 
 ### Ollama (Local)
+Uses [`langchain-ollama`](https://pypi.org/project/langchain-ollama/) to run open-source models locally.
 
-Uses [`langchain-ollama`](https://pypi.org/project/langchain-ollama/) to run open-source models locally (e.g., llama3.2, mistral).
+**Required:** Ollama must be installed and running.
 
-**Required:** Ollama must be installed and running locally.
-
-1. Install Ollama: https://ollama.com (or `brew install ollama` on Mac)
-2. Start server: `ollama serve`
-3. Pull a model: `ollama pull llama3.2:3b`
+1. Install: https://ollama.com
+2. Start: `ollama serve`
+3. Pull model: `ollama pull <model-name>`
 
 ```env
 LLM_PROVIDER_NAME=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-LLM_MODEL=llama3.2:3b
+LLM_MODEL=local-llm-model
 ```
 
 ```python
@@ -345,18 +344,12 @@ from memblocks import MemBlocksClient, MemBlocksConfig
 
 config = MemBlocksConfig(
     llm_provider_name="ollama",
-    llm_model="llama3.2:3b",
+    llm_model="local-llm-model",
 )
 client = MemBlocksClient(config)
 ```
 
-**Recommended models:**
-- `llama3.2:3b` — fast, lightweight (3B params)
-- `llama3.1` — balanced (8B params)
-- `mistral` — very fast for extraction tasks
-- `llama3.1:70b` — higher quality but slower
-
-See full model library: https://ollama.com/library
+**Note:** No API key is required. Set `OLLAMA_BASE_URL` if your Ollama server is not at the default `http://localhost:11434`.
 
 ### Using a Custom Provider
 
