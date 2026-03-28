@@ -68,10 +68,18 @@ class MemBlocksConfig(BaseSettings):
         None, validation_alias="OPENROUTER_API_KEY"
     )
 
+    # Ollama local server
+    ollama_base_url: str = Field(
+        "http://localhost:11434",
+        validation_alias="OLLAMA_BASE_URL",
+        description="Base URL for local Ollama server",
+    )
+
     # Cohere re-ranker API
     cohere_api_key: Optional[str] = Field(
-        None, validation_alias="COHERE_API_KEY",
-        description="API key for the Cohere re-ranker service."
+        None,
+        validation_alias="COHERE_API_KEY",
+        description="API key for the Cohere re-ranker service.",
     )
     openrouter_fallback_models: Optional[str] = Field(
         None,
@@ -287,9 +295,7 @@ class MemBlocksConfig(BaseSettings):
     clerk_publishable_key: Optional[str] = Field(
         None, validation_alias="CLERK_PUBLISHABLE_KEY"
     )
-    clerk_secret_key: Optional[str] = Field(
-        None, validation_alias="CLERK_SECRET_KEY"
-    )
+    clerk_secret_key: Optional[str] = Field(None, validation_alias="CLERK_SECRET_KEY")
 
     # -------------------------------------------------------------------------
     # Pydantic settings config

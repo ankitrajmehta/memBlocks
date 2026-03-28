@@ -61,7 +61,8 @@ memblocks_lib/
     │   ├── task_settings.py     # LLMTaskSettings, LLMSettings
     │   ├── groq_provider.py     # GroqLLMProvider
     │   ├── gemini_provider.py   # GeminiLLMProvider
-    │   └── openrouter_provider.py # OpenRouterLLMProvider
+    │   ├── openrouter_provider.py # OpenRouterLLMProvider
+    │   └── ollama_provider.py   # OllamaLLMProvider
     │
     ├── services/            # Business logic
     │   ├── __init__.py
@@ -282,10 +283,11 @@ class MemBlocksConfig(BaseSettings):
 
 | Field | Env Var | Default | Description |
 |-------|---------|---------|-------------|
-| `llm_provider_name` | `LLM_PROVIDER_NAME` | `groq` | Active provider: `"groq"`, `"gemini"`, or `"openrouter"` (used when `llm_settings` is not set) |
+| `llm_provider_name` | `LLM_PROVIDER_NAME` | `groq` | Active provider: `"groq"`, `"gemini"`, `"openrouter"`, or `"ollama"` (used when `llm_settings` is not set) |
 | `groq_api_key` | `GROQ_API_KEY` | `None` | Groq API key |
 | `gemini_api_key` | `GEMINI_API_KEY` | `None` | Google Gemini API key |
 | `openrouter_api_key` | `OPENROUTER_API_KEY` | `None` | OpenRouter API key |
+| `ollama_base_url` | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `llm_model` | `LLM_MODEL` | `mmoonshotai/kimi-k2-instruct-0905` | Model identifier (used when `llm_settings` is not set) |
 | `llm_settings` | *(code only)* | `None` | `LLMSettings` object for per-task provider routing; when set, takes precedence over flat fields |
 | `openrouter_fallback_models` | `OPENROUTER_FALLBACK_MODELS` | `""` | Comma-separated fallback model IDs for OpenRouter |
@@ -1007,13 +1009,28 @@ Uses `langchain_openai.ChatOpenAI` pointed at the OpenRouter API base URL.
 
 **Factory:** `OpenRouterLLMProvider.from_task_settings(task_settings, api_key)`.
 
+### OllamaLLMProvider
+
+Uses `langchain_ollama.ChatOllama` to run open-source models locally.
+
+**Location:** `llm/ollama_provider.py`
+
+**Structured output** uses Ollama's JSON mode (`format="json"`).
+
+**Factory:** `OllamaLLMProvider.from_task_settings(task_settings, base_url)`.
+
+**Prerequisites:**
+1. Install Ollama: https://ollama.com
+2. Run `ollama serve`
+3. Pull a model: `ollama pull llama3.2:3b`
+
 ### Per-Task LLM System
 
 **Location:** `llm/task_settings.py`
 
 ```python
 class LLMTaskSettings(BaseModel):
-    provider: str                        # "groq" | "gemini" | "openrouter"
+    provider: str                        # "groq" | "gemini" | "openrouter" | "ollama"
     model: str
     temperature: float = 0.0
     fallback_models: List[str] = []      # OpenRouter only

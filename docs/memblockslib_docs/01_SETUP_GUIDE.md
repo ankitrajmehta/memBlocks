@@ -95,7 +95,7 @@ Edit `.env` with your values:
 
 ```env
 # === LLM Provider Selection (Required) ===
-# Choose your provider: "groq" (default), "gemini", or "openrouter"
+# Choose your provider: "groq" (default), "gemini", "openrouter", or "ollama"
 LLM_PROVIDER_NAME=groq
 
 # === Groq API (Required if using Groq) ===
@@ -111,6 +111,10 @@ LLM_MODEL=mmoonshotai/kimi-k2-instruct-0905
 # LLM_MODEL=mmoonshotai/kimi-k2-instruct-0905
 # OPENROUTER_FALLBACK_MODELS=anthropic/claude-3-5-haiku,google/gemini-flash-1.5
 # OPENROUTER_ENABLE_THINKING=false
+
+# === Ollama (Local) ===
+# OLLAMA_BASE_URL=http://localhost:11434
+# LLM_MODEL=llama3.2:3b
 
 # === MongoDB (Required) ===
 MONGODB_CONNECTION_STRING=mongodb://localhost:27017
@@ -196,11 +200,12 @@ client = MemBlocksClient(config)
 
 | Setting | Environment Variable | Default | Description |
 |---------|---------------------|---------|-------------|
-| `llm_provider_name` | `LLM_PROVIDER_NAME` | `groq` | Active LLM provider (`"groq"`, `"gemini"`, or `"openrouter"`) |
+| `llm_provider_name` | `LLM_PROVIDER_NAME` | `groq` | Active LLM provider (`"groq"`, `"gemini"`, `"openrouter"`, or `"ollama"`) |
 | `groq_api_key` | `GROQ_API_KEY` | `None` | API key for Groq (required when provider is `"groq"`) |
 | `gemini_api_key` | `GEMINI_API_KEY` | `None` | API key for Google Gemini (required when provider is `"gemini"`) |
 | `openrouter_api_key` | `OPENROUTER_API_KEY` | `None` | API key for OpenRouter (required when provider is `"openrouter"`) |
 | `cohere_api_key` | `COHERE_API_KEY` | `None` | API key for Cohere re-ranker (required when using Cohere-based reranking) |
+| `ollama_base_url` | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL (required when provider is `"ollama"`) |
 | `llm_model` | `LLM_MODEL` | `mmoonshotai/kimi-k2-instruct-0905` | Model identifier (provider-specific) |
 | `mongodb_connection_string` | `MONGODB_CONNECTION_STRING` | *required* | MongoDB connection URI |
 | `mongodb_database_name` | `MONGODB_DATABASE_NAME` | `memblocks_v2` | Database name |
@@ -319,6 +324,40 @@ client = MemBlocksClient(config)
 | Fallback models | `OPENROUTER_FALLBACK_MODELS` / `openrouter_fallback_models` | Comma-separated list of model IDs tried in sequence if the primary model fails |
 | Enable thinking | `OPENROUTER_ENABLE_THINKING` / `openrouter_enable_thinking` | Pass `enable_thinking: true` to the OpenRouter API (requires a reasoning-capable model) |
 
+### Ollama (Local)
+
+Uses [`langchain-ollama`](https://pypi.org/project/langchain-ollama/) to run open-source models locally (e.g., llama3.2, mistral).
+
+**Required:** Ollama must be installed and running locally.
+
+1. Install Ollama: https://ollama.com (or `brew install ollama` on Mac)
+2. Start server: `ollama serve`
+3. Pull a model: `ollama pull llama3.2:3b`
+
+```env
+LLM_PROVIDER_NAME=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+LLM_MODEL=llama3.2:3b
+```
+
+```python
+from memblocks import MemBlocksClient, MemBlocksConfig
+
+config = MemBlocksConfig(
+    llm_provider_name="ollama",
+    llm_model="llama3.2:3b",
+)
+client = MemBlocksClient(config)
+```
+
+**Recommended models:**
+- `llama3.2:3b` — fast, lightweight (3B params)
+- `llama3.1` — balanced (8B params)
+- `mistral` — very fast for extraction tasks
+- `llama3.1:70b` — higher quality but slower
+
+See full model library: https://ollama.com/library
+
 ### Using a Custom Provider
 
 You can bypass the built-in providers entirely by passing your own `LLMProvider` instance directly:
@@ -423,7 +462,7 @@ client = MemBlocksClient(config)
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `provider` | `str` | *required* | `"groq"`, `"gemini"`, or `"openrouter"` |
+| `provider` | `str` | *required* | `"groq"`, `"gemini"`, `"openrouter"`, or `"ollama"` |
 | `model` | `str` | *required* | Model identifier for the chosen provider |
 | `temperature` | `float` | `0.0` | Sampling temperature for this task |
 | `fallback_models` | `List[str]` | `[]` | OpenRouter only — fallback model IDs tried in order |
@@ -642,7 +681,7 @@ Get a key at [https://openrouter.ai/keys](https://openrouter.ai/keys).
 
 ### "Unknown LLM provider: …"
 
-`LLM_PROVIDER_NAME` must be exactly `"groq"`, `"gemini"`, or `"openrouter"` (case-sensitive).
+`LLM_PROVIDER_NAME` must be exactly `"groq"`, `"gemini"`, `"openrouter"`, or `"ollama"` (case-sensitive).
 
 ```env
 LLM_PROVIDER_NAME=openrouter   # correct

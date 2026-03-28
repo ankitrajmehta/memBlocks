@@ -240,7 +240,7 @@ Updated Core Memory Output:
 
 ---
 
-**Example 2: No new facts (NOOP)**
+**Example 2: No new facts (No operation)**
 
 Old Core Memory:
 {{
@@ -253,6 +253,7 @@ Conversation:
 2. "I'm working on a React project right now."
 3. "Did you check the weather?"
 4. "I'm feeling tired today."
+5. "I had a fight with a friend today"
 
 Updated Core Memory Output (unchanged):
 {{
@@ -261,73 +262,6 @@ Updated Core Memory Output (unchanged):
 }}
 
 *Rationale: Current projects ("React project"), temporary states ("feeling tired"), and casual greetings contain no stable facts to store.*
-
----
-
-**Example 3: Conflict Resolution - Location Update**
-
-Old Core Memory:
-{{
-  "persona_content": "The AI is helpful and enthusiastic.",
-  "human_content": "User is John, a Python developer who uses VS Code."
-}}
-
-Conversation:
-1. "I've moved to Berlin now."
-2. "I mostly switched to Rust for my work."
-3. "Stop being so enthusiastic, just give me the code."
-
-Updated Core Memory Output:
-{{
-  "persona_content": "The AI is helpful and direct, avoiding excessive enthusiasm. It focuses on providing code solutions efficiently.",
-  "human_content": "User is John, lives in Berlin, and works as a Rust developer who uses VS Code."
-}}
-
-*Rationale: Location updated (Kathmandu → Berlin), primary language updated (Python → Rust). Editor preference preserved.*
-
----
-
-**Example 4: Explicit interests only**
-
-Old Core Memory:
-{{
-  "persona_content": "The AI provides concise, technical responses.",
-  "human_content": "User is Emma, studying computer science."
-}}
-
-Conversation:
-1. "I'm taking a machine learning course this semester."
-2. "I really love jazz music, by the way."
-3. "Working on a group project about neural networks."
-
-Updated Core Memory Output:
-{{
-  "persona_content": "The AI provides concise, technical responses.",
-  "human_content": "User is Emma, studying computer science. She loves jazz music."
-}}
-
-*Rationale: Only "loves jazz music" is stored as an explicit interest. Current courses and projects are temporary and excluded.*
-
----
-
-**Example 5: Pronouns and timezone**
-
-Old Core Memory:
-{{
-  "persona_content": "The AI is conversational and supportive.",
-  "human_content": "User is named Riley."
-}}
-
-Conversation:
-1. "Just so you know, I use they/them pronouns."
-2. "I'm in PST timezone."
-3. "I'm a freelance graphic designer."
-
-Updated Core Memory Output:
-{{
-  "persona_content": "The AI is conversational and supportive.",
-  "human_content": "User is named Riley (they/them) and is in PST timezone. They work as a freelance graphic designer."
-}}
 
 ---
 
@@ -516,63 +450,6 @@ When using context:
 - If semantic memories and resources overlap, cite the resource as primary source
 - Provide concise, informed responses based on available context"""
 
-
-QUERY_EXPANSION_PROMPT = """
-You are a query expansion specialist for semantic memory retrieval systems.
-
-Your task is to generate alternative query formulations that will improve retrieval coverage. Given a user's original query, you must generate {num_expansions} semantically related queries that:
-
-1. **Add related terms and concepts**: Include synonyms, hyponyms, hypernyms, and domain-specific terminology
-2. **Rephrase with different perspectives**: Reframe the question from different angles
-3. **Expand abbreviations and acronyms**: Make implicit terms explicit
-4. **Include contextual variations**: Consider different ways the information might be stored
-5. **Maintain semantic intent**: All expanded queries must preserve the core information need
-
-## Guidelines:
-
-- Each expanded query should be a complete, standalone query
-- Avoid trivial lexical variations (e.g., just changing word order)
-- Focus on semantic expansion that captures related concepts
-- Do NOT generate duplicate or near-duplicate queries
-- Keep queries concise and specific (1-2 sentences max)
-- Order by decreasing relevance to the original query
-
-## Output Format (JSON only):
-
-{{
-  "expanded_queries": [
-    "First expanded query with related terms",
-    "Second expanded query from different perspective",
-    "Third expanded query with domain-specific terminology"
-  ]
-}}
-
-## Examples:
-
-**Example 1:**
-Original Query: "Python machine learning projects"
-{{
-  "expanded_queries": [
-    "Python ML project implementations and examples",
-    "Machine learning applications developed using Python programming language",
-    "Python-based artificial intelligence and data science projects"
-  ]
-}}
-
-**Example 2:**
-Original Query: "database optimization techniques"
-{{
-  "expanded_queries": [
-    "SQL performance tuning and query optimization strategies",
-    "Database indexing, caching, and storage optimization methods",
-    "RDBMS and NoSQL database performance improvement approaches"
-  ]
-}}
-
-**Important**: Output ONLY valid JSON. No markdown, no extra text.
-"""
-
-
 QUERY_ENHANCEMENT_PROMPT = """
 You are a query enhancement specialist for semantic memory retrieval systems.
 
@@ -673,60 +550,6 @@ Original Query: "What are the benefits of using Docker?"
     "The main benefits of Docker include improved CI/CD workflows with faster build and deployment times, better scalability through orchestration tools like Kubernetes, and simplified dependency management. Docker Hub provides a vast ecosystem of pre-built images, and Docker Compose allows defining multi-container applications in a single YAML file, streamlining development and testing."
   ]
 }}
-"""
-
-HYPOTHETICAL_PARAGRAPH_PROMPT = """
-You are a hypothetical answer generator for semantic memory retrieval systems.
-
-Your task is to generate {num_paragraphs} hypothetical answer paragraphs that could plausibly respond to the user's query. These paragraphs will be used to retrieve semantically similar memories from the knowledge base.
-
-## Purpose:
-
-Rather than searching with the question directly, we search with potential answers. This technique (called HyDE - Hypothetical Document Embeddings) improves retrieval by:
-- Bridging the embedding space gap between questions and answers
-- Capturing the semantic style and structure of actual stored memories
-- Including domain-specific terminology that appears in answers, not questions
-
-## Guidelines:
-
-1. **Write as if answering the query**: Generate realistic answer-style text, not questions
-2. **Be specific and detailed**: Include concrete facts, examples, and terminology
-3. **Vary the focus**: Each paragraph should emphasize different aspects of the query
-4. **Use natural language**: Write as a human would explain the topic
-5. **Include relevant entities**: Mention specific tools, technologies, people, or concepts
-6. **Keep it concise**: 2-4 sentences per paragraph
-7. **Be factually plausible**: Don't fabricate specific facts, but write in an answer style
-
-## Output Format (JSON only):
-
-{{
-  "paragraphs": [
-    "First hypothetical answer paragraph with specific details and terminology",
-    "Second hypothetical answer paragraph emphasizing different aspects"
-  ]
-}}
-
-## Examples:
-
-**Example 1:**
-Query: "How does user authentication work in FastAPI?"
-{{
-  "paragraphs": [
-    "FastAPI implements user authentication through OAuth2 with Password flow and JWT tokens. The security utilities in fastapi.security module provide dependencies like OAuth2PasswordBearer for token validation. Typically, you create a /token endpoint that returns a JWT token after verifying credentials, and then use the token in subsequent requests via the Authorization header.",
-    "User authentication in FastAPI can be implemented using the OAuth2PasswordRequestForm for login and HTTPBearer for token verification. The authentication flow involves hashing passwords with libraries like bcrypt or passlib, generating JWT tokens with python-jose, and protecting routes with dependency injection using Depends() to verify the current user from the token."
-  ]
-}}
-
-**Example 2:**
-Query: "What are the benefits of using Docker?"
-{{
-  "paragraphs": [
-    "Docker provides consistent development and production environments through containerization, eliminating the 'works on my machine' problem. Containers package applications with all their dependencies, making deployment faster and more reliable. Docker also enables efficient resource utilization since containers share the host OS kernel, using less memory than traditional virtual machines.",
-    "The main benefits of Docker include improved CI/CD workflows with faster build and deployment times, better scalability through orchestration tools like Kubernetes, and simplified dependency management. Docker Hub provides a vast ecosystem of pre-built images, and Docker Compose allows defining multi-container applications in a single YAML file, streamlining development and testing."
-  ]
-}}
-
-**Important**: Output ONLY valid JSON. No markdown, no extra text. Write as if you're providing answers, not asking questions.
 """
 
 

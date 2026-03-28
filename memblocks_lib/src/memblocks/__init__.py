@@ -22,6 +22,7 @@ from memblocks.client import MemBlocksClient
 from memblocks.llm.base import LLMProvider
 from memblocks.llm.groq_provider import GroqLLMProvider
 from memblocks.llm.gemini_provider import GeminiLLMProvider
+from memblocks.llm.ollama_provider import OllamaLLMProvider
 from memblocks.llm.task_settings import LLMTaskSettings, LLMSettings
 
 # Stateful objects returned by the client
@@ -48,6 +49,7 @@ __all__ = [
     "LLMProvider",
     "GroqLLMProvider",
     "GeminiLLMProvider",
+    "OllamaLLMProvider",
     "LLMTaskSettings",
     "LLMSettings",
     # Stateful objects
