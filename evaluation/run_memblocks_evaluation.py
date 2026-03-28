@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import csv
 import json
+import math
 import statistics
 import time
 import uuid
@@ -127,14 +128,25 @@ def write_json(path: Path, payload: Any) -> None:
 
 
 def percentile(sorted_values: List[float], q: float) -> Optional[float]:
+    """Calculate percentile using linear interpolation (matches numpy method)."""
     if not sorted_values:
         return None
     if q <= 0:
         return sorted_values[0]
     if q >= 1:
         return sorted_values[-1]
-    idx = int(round((len(sorted_values) - 1) * q))
-    return sorted_values[idx]
+
+    # Linear interpolation between two nearest values
+    pos = (len(sorted_values) - 1) * q
+    idx_low = int(pos)
+    idx_high = min(idx_low + 1, len(sorted_values) - 1)
+
+    if idx_low == idx_high:
+        return sorted_values[idx_low]
+
+    # Interpolate between the two values
+    weight = pos - idx_low
+    return sorted_values[idx_low] * (1 - weight) + sorted_values[idx_high] * weight
 
 
 def numeric_stats(values: Iterable[Optional[float]]) -> Dict[str, Optional[float]]:
@@ -714,6 +726,12 @@ async def evaluate_method(
         session._keep_last_n = keep_last_n
 
         for idx, user_message in enumerate(messages, start=1):
+            print(
+                f"[PROGRESS] Turn {idx}/{len(messages)} - {method.name}",
+                end="\r",
+                flush=True,
+            )
+
             turn_started_at = utc_now()
             turn_t0 = time.perf_counter()
 
@@ -726,6 +744,9 @@ async def evaluate_method(
             ai_response = ""
             retrieval_ms: Optional[float] = None
             conversation_ms: Optional[float] = None
+            memory_window_ms: Optional[float] = None
+            summary_ms: Optional[float] = None
+            session_add_ms: Optional[float] = None
             prompt_char_len: Optional[int] = None
             memory_window_len: Optional[int] = None
 
@@ -734,9 +755,15 @@ async def evaluate_method(
                 context = await block.retrieve(user_message)
                 retrieval_ms = (time.perf_counter() - t0_retrieve) * 1000.0
 
+                t0_memory_window = time.perf_counter()
                 memory_window = await session.get_memory_window()
                 memory_window_len = len(memory_window)
+                memory_window_ms = (time.perf_counter() - t0_memory_window) * 1000.0
+
+                t0_summary = time.perf_counter()
                 summary = await session.get_recursive_summary()
+                summary_ms = (time.perf_counter() - t0_summary) * 1000.0
+
                 system_prompt = build_system_prompt(summary, context.to_prompt_string())
                 prompt_char_len = len(system_prompt)
 
@@ -760,7 +787,9 @@ async def evaluate_method(
                     )
                     background_add_tasks.append(task)
                 else:
+                    t0_session_add = time.perf_counter()
                     await session.add(user_msg=user_message, ai_response=ai_response)
+                    session_add_ms = (time.perf_counter() - t0_session_add) * 1000.0
 
             except Exception as exc:
                 turn_error = str(exc)
@@ -768,6 +797,14 @@ async def evaluate_method(
                     raise
 
             turn_total_ms = (time.perf_counter() - turn_t0) * 1000.0
+
+            # Calculate user-facing latency (only operations that block the user)
+            user_facing_ms = (
+                (retrieval_ms or 0)
+                + (conversation_ms or 0)
+                + (memory_window_ms or 0)
+                + (summary_ms or 0)
+            )
 
             usage_after = usage_tracker.get_records(limit=100000)
             retrieval_after = retrieval_log.get_entries(limit=100000)
@@ -800,8 +837,12 @@ async def evaluate_method(
                     "assistant_response_char_len": len(ai_response),
                     "timing_ms": {
                         "turn_total": turn_total_ms,
+                        "user_facing": user_facing_ms,  # NEW: Only user-blocking operations
                         "retrieve": retrieval_ms,
                         "conversation": conversation_ms,
+                        "memory_window": memory_window_ms,  # NEW
+                        "summary": summary_ms,  # NEW
+                        "session_add": session_add_ms,  # NEW: Only set if sync mode
                     },
                     "prompt_char_len": prompt_char_len,
                     "memory_window_len": memory_window_len,
@@ -820,8 +861,35 @@ async def evaluate_method(
 
             await maybe_sleep(turn_delay_seconds)
 
+        # Wait for all background tasks and capture errors
+        background_errors: List[Dict[str, Any]] = []
         if background_add_tasks:
-            await asyncio.gather(*background_add_tasks, return_exceptions=True)
+            print(
+                f"\n[BACKGROUND] Waiting for {len(background_add_tasks)} background tasks..."
+            )
+            background_results = await asyncio.gather(
+                *background_add_tasks, return_exceptions=True
+            )
+            for idx, result in enumerate(background_results):
+                if isinstance(result, Exception):
+                    error_info = {
+                        "turn_index": idx + 1,
+                        "error": str(result),
+                        "error_type": type(result).__name__,
+                    }
+                    background_errors.append(error_info)
+                    print(
+                        f"[WARNING] Background task for turn {idx + 1} failed: {result}"
+                    )
+
+            if background_errors:
+                print(
+                    f"[WARNING] {len(background_errors)} background tasks failed out of {len(background_add_tasks)}"
+                )
+            else:
+                print(
+                    f"[SUCCESS] All {len(background_add_tasks)} background tasks completed successfully"
+                )
 
         if flush_at_end:
             flush_started = utc_now()
@@ -869,8 +937,18 @@ async def evaluate_method(
         processing_runs = processing_history.get_runs(limit=100000)
         operation_entries = operation_log.get_entries(limit=100000)
 
+        # Validate turn count
+        if len(turns) != len(messages):
+            error_msg = f"Expected {len(messages)} turns but got {len(turns)}"
+            print(f"\n[ERROR] {error_msg}")
+
         turn_total_latencies = [
             t["timing_ms"]["turn_total"] for t in turns if t["timing_ms"]["turn_total"]
+        ]
+        turn_user_facing_latencies = [
+            t["timing_ms"]["user_facing"]
+            for t in turns
+            if t["timing_ms"].get("user_facing") is not None
         ]
         turn_retrieve_latencies = [
             t["timing_ms"]["retrieve"]
@@ -926,10 +1004,12 @@ async def evaluate_method(
             },
             "timing_ms": {
                 "turn_total": numeric_stats(turn_total_latencies),
+                "user_facing": numeric_stats(turn_user_facing_latencies),  # NEW
                 "retrieve": numeric_stats(turn_retrieve_latencies),
                 "conversation": numeric_stats(turn_conversation_latencies),
                 "pipeline_run_duration": pipeline_summary["duration_ms"],
             },
+            "background_task_errors": background_errors,  # NEW
             "token_usage": llm_summary,
             "token_usage_user_path": llm_user_path_summary,
             "token_usage_background": llm_background_summary,
@@ -983,6 +1063,7 @@ async def evaluate_full_history_baseline(
     method_output_dir: Path,
     continue_on_error: bool,
     turn_delay_seconds: float,
+    user_prefix: str,  # NEW: Need user_prefix for block creation
 ) -> Dict[str, Any]:
     """Run baseline using only full chat history for the conversation LLM.
 
@@ -995,8 +1076,27 @@ async def evaluate_full_history_baseline(
 
     usage_tracker = client.get_llm_usage()
 
+    # Create a baseline block for consistency with MemBlocks evaluation
+    run_token = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    user_id = f"{user_prefix}_baseline_{run_token}"
+    baseline_block_id: Optional[str] = None
+
     try:
+        await client.get_or_create_user(user_id)
+        baseline_block = await client.create_block(
+            user_id=user_id,
+            name="Evaluation Baseline",
+            description="Full history baseline block",
+        )
+        baseline_block_id = baseline_block.id
+
         for idx, user_message in enumerate(messages, start=1):
+            print(
+                f"[PROGRESS] Turn {idx}/{len(messages)} - full_history_baseline",
+                end="\r",
+                flush=True,
+            )
+
             turn_started_at = utc_now()
             turn_t0 = time.perf_counter()
 
@@ -1015,7 +1115,10 @@ async def evaluate_full_history_baseline(
             try:
                 t0 = time.perf_counter()
                 conversation_llm: Any = client.conversation_llm
-                ai_response = await conversation_llm.chat(messages=llm_messages)
+                ai_response = await conversation_llm.chat(
+                    messages=llm_messages,
+                    block_id=baseline_block_id,  # FIXED: Now consistent with MemBlocks
+                )
                 conversation_ms = (time.perf_counter() - t0) * 1000.0
 
                 history.append({"role": "user", "content": user_message})
@@ -1054,6 +1157,11 @@ async def evaluate_full_history_baseline(
             )
 
             await maybe_sleep(turn_delay_seconds)
+
+        # Validate turn count
+        if len(turns) != len(messages):
+            error_msg = f"Expected {len(messages)} turns but got {len(turns)}"
+            print(f"\n[ERROR] Baseline {error_msg}")
 
         llm_records = usage_tracker.get_records(limit=100000)
         llm_summary = summarize_llm_records(llm_records)
@@ -1186,6 +1294,12 @@ def build_comparison_rows(method_reports: List[Dict[str, Any]]) -> List[Dict[str
             "failed_turns": report["totals"]["failed_turns"],
             "turn_avg_ms": report["timing_ms"]["turn_total"].get("avg"),
             "turn_p95_ms": report["timing_ms"]["turn_total"].get("p95"),
+            "user_facing_avg_ms": report["timing_ms"]
+            .get("user_facing", {})
+            .get("avg"),  # NEW
+            "user_facing_p95_ms": report["timing_ms"]
+            .get("user_facing", {})
+            .get("p95"),  # NEW
             "retrieval_avg_ms": report["timing_ms"]["retrieve"].get("avg"),
             "conversation_avg_ms": report["timing_ms"]["conversation"].get("avg"),
             "pipeline_avg_ms": report["timing_ms"]["pipeline_run_duration"].get("avg"),
@@ -1251,6 +1365,7 @@ def build_comparison_rows(method_reports: List[Dict[str, Any]]) -> List[Dict[str
 
 
 def add_full_history_deltas(rows: List[Dict[str, Any]]) -> None:
+    """Calculate deltas vs baseline. Positive delta means MORE tokens (investment), negative means LESS (savings)."""
     baseline = next(
         (row for row in rows if row.get("method") == "full_history_baseline"), None
     )
@@ -1266,24 +1381,28 @@ def add_full_history_deltas(rows: List[Dict[str, Any]]) -> None:
         user_path_total = row.get("user_path_tokens") or 0
         conv = row.get("conversation_tokens") or 0
 
-        row["vs_full_history_total_token_delta"] = baseline_total - total
-        row["vs_full_history_total_token_savings_pct"] = (
-            ((baseline_total - total) / baseline_total) * 100.0
+        # Total token comparison
+        row["vs_full_history_total_token_delta"] = total - baseline_total
+        row["vs_full_history_total_token_delta_pct"] = (
+            ((total - baseline_total) / baseline_total) * 100.0
             if baseline_total > 0
             else None
         )
-        row["vs_full_history_conversation_token_delta"] = baseline_conversation - conv
-        row["vs_full_history_conversation_token_savings_pct"] = (
-            ((baseline_conversation - conv) / baseline_conversation) * 100.0
+
+        # Conversation token comparison
+        row["vs_full_history_conversation_token_delta"] = conv - baseline_conversation
+        row["vs_full_history_conversation_token_delta_pct"] = (
+            ((conv - baseline_conversation) / baseline_conversation) * 100.0
             if baseline_conversation > 0
             else None
         )
 
+        # User path token comparison
         row["vs_full_history_user_path_token_delta"] = (
-            baseline_user_path_total - user_path_total
+            user_path_total - baseline_user_path_total
         )
-        row["vs_full_history_user_path_token_savings_pct"] = (
-            ((baseline_user_path_total - user_path_total) / baseline_user_path_total)
+        row["vs_full_history_user_path_token_delta_pct"] = (
+            ((user_path_total - baseline_user_path_total) / baseline_user_path_total)
             * 100.0
             if baseline_user_path_total > 0
             else None
@@ -1309,6 +1428,8 @@ def write_comparison_markdown(path: Path, rows: List[Dict[str, Any]]) -> None:
         "method",
         "turn_avg_ms",
         "turn_p95_ms",
+        "user_facing_avg_ms",  # NEW
+        "user_facing_p95_ms",  # NEW
         "total_tokens",
         "tokens_per_turn",
         "user_path_tokens",
@@ -1316,9 +1437,9 @@ def write_comparison_markdown(path: Path, rows: List[Dict[str, Any]]) -> None:
         "background_tokens",
         "background_tokens_per_turn",
         "vs_full_history_total_token_delta",
-        "vs_full_history_total_token_savings_pct",
+        "vs_full_history_total_token_delta_pct",  # RENAMED from savings_pct
         "vs_full_history_user_path_token_delta",
-        "vs_full_history_user_path_token_savings_pct",
+        "vs_full_history_user_path_token_delta_pct",  # RENAMED from savings_pct
         "llm_requests",
         "retrieval_avg_results",
         "pipeline_runs",
@@ -1506,7 +1627,7 @@ async def run() -> None:
             "method_delay_seconds": args.method_delay_seconds,
             "memory_window_limit": args.memory_window_limit,
             "keep_last_n": args.keep_last_n,
-            "session_add_background": args.session_add_background,
+            "session_add_background": args.session_add_background,  # ADDED
         },
     )
     write_json(run_dir / "messages.json", messages)
@@ -1574,6 +1695,7 @@ async def run() -> None:
             method_output_dir=baseline_dir,
             continue_on_error=args.continue_on_error,
             turn_delay_seconds=args.turn_delay_seconds,
+            user_prefix=args.user_prefix,  # ADDED
         )
         method_reports.append(baseline_report)
 
@@ -1616,7 +1738,7 @@ async def run() -> None:
             "method_delay_seconds": args.method_delay_seconds,
             "memory_window_limit": args.memory_window_limit,
             "keep_last_n": args.keep_last_n,
-            "session_add_background": args.session_add_background,
+            "session_add_background": args.session_add_background,  # ADDED
             "method_count": len(methods),
             "evaluated_variant_count": len(method_reports),
         },
