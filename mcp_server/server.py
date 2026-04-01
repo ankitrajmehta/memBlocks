@@ -22,6 +22,7 @@ from memblocks.llm.task_settings import LLMSettings, LLMTaskSettings
 from mcp_server.state import (
     get_active_block_id,
     get_mcp_lock,
+    get_user_id,
     set_active_block_id,
     set_user_id,
 )
@@ -81,8 +82,16 @@ logger.info(f"MCP server starting — logs at {LOG_DIR.absolute()}")
 # --- Lifespan — singleton client initialization ---
 @asynccontextmanager
 async def app_lifespan(server: FastMCP):
-    user_id = os.environ.get("MEMBLOCKS_USER_ID", "default_user")
-    logger.info(f"Initializing MemBlocksClient for user: {user_id}")
+    # Resolve user_id: env var > state file > default
+    if env_user := os.environ.get("MEMBLOCKS_USER_ID"):
+        user_id = env_user
+        logger.info(f"Using user_id from MEMBLOCKS_USER_ID env var: {user_id}")
+    elif state_user := get_user_id():
+        user_id = state_user
+        logger.info(f"Using user_id from state file: {user_id}")
+    else:
+        user_id = "default_user"
+        logger.info(f"Using default user_id: {user_id}")
     config = MemBlocksConfig(
         llm_settings=LLMSettings(
             default=LLMTaskSettings(
